@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #0b0d10;
+  --color-surface: #14181d;
+  --color-surface-2: #1d232b;
+  --color-border: #2b333d;
+  --color-text: #e9eef3;
+  --color-muted: #8d99a6;
+  --color-accent: #4c9aff;
+  --color-accent-fg: #061523;
+  --color-danger: #ff5f5f;
+  --color-success: #3ecf8e;
+
+  --color-chest: #ff6b6b;
+  --color-back: #4c9aff;
+  --color-legs: #ffb020;
+  --color-shoulders: #b57bff;
+  --color-arms: #3ecf8e;
+  --color-core: #ff8fd0;
+}
+
+html {
+  background: var(--color-bg);
+  color-scheme: dark;
+  /* iOS 고무줄 스크롤 시 흰 배경이 비치는 것 방지 */
+  overscroll-behavior-y: none;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* number input 의 spinner 제거 — 자체 스테퍼 버튼을 쓴다 */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+@utility safe-b {
+  padding-bottom: env(safe-area-inset-bottom);
+}
