@@ -9,7 +9,13 @@ import {
   markRestTimerNotified,
   setRestTimer,
 } from "@/lib/db/repo";
-import { notify, playBeep, vibrate } from "./alert";
+import {
+  clearRestNotification,
+  notifyRestDone,
+  notifyRestStarted,
+  playBeep,
+  vibrate,
+} from "./alert";
 import { useNow } from "./useNow";
 
 /**
@@ -29,6 +35,23 @@ export function useRestTimer() {
   const remainingSec = timer ? timer.targetSec - elapsedSec : 0;
   const isDone = !!timer && now > 0 && remainingSec <= 0;
 
+  /*
+   * 휴식이 시작되거나 목표 시간이 바뀌면 종료 예정 시각을 알림창에 미리 깔아둔다.
+   * 화면을 끄면 아래 "휴식 끝" 알림이 못 나갈 수 있어서, 지금 띄워두는 게 유일한 보험이다.
+   *
+   * deps 를 원시값으로 풀어둔 건 useLiveQuery 가 매번 새 객체를 돌려주기 때문이다.
+   * timer 를 그대로 넣으면 관련 쓰기마다 알림이 다시 나간다.
+   */
+  const notificationEnabled = settings?.notificationEnabled ?? false;
+  const restPending = !!timer && !timer.notified;
+  const restTargetSec = timer?.targetSec ?? 0;
+  const restEndsAt = timer ? timer.startedAt + timer.targetSec * 1000 : 0;
+
+  useEffect(() => {
+    if (!restPending || !notificationEnabled) return;
+    void notifyRestStarted(restTargetSec, restEndsAt);
+  }, [restPending, notificationEnabled, restTargetSec, restEndsAt]);
+
   // 알림 발사. 중복 방지를 위해 notified 플래그를 DB 에 남긴다.
   useEffect(() => {
     if (!timer || timer.notified || !isDone || !settings) return;
@@ -37,9 +60,21 @@ export function useRestTimer() {
     if (settings.soundEnabled) playBeep();
     if (settings.vibrationEnabled) vibrate();
     if (settings.notificationEnabled) {
-      void notify("휴식 끝", "다음 세트 시작하세요");
+      // 백그라운드에서는 위의 playBeep/vibrate 가 무시되므로 알림에 진동을 실어 보낸다
+      void notifyRestDone(settings.vibrationEnabled);
     }
   }, [timer, isDone, settings]);
+
+  /*
+   * 타이머가 사라지면(다음 세트 완료 · 휴식 종료 · 운동 종료) 깔아둔 알림도 치운다.
+   * null 은 "없음", undefined 는 "아직 로딩 중" — 구분하지 않으면 앱을 열 때마다
+   * 진행 중이던 휴식 알림을 지웠다 다시 띄우게 된다.
+   */
+  const noTimer = timer === null;
+  useEffect(() => {
+    if (!noTimer) return;
+    void clearRestNotification();
+  }, [noTimer]);
 
   return {
     timer,

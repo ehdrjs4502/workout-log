@@ -44,3 +44,6 @@ export function formatDurationMs(ms: number): string {
 /** 60 → "60", 62.5 → "62.5" (불필요한 .0 제거) */
 export const formatWeight = (kg: number) =>
   Number.isInteger(kg) ? String(kg) : String(Number(kg.toFixed(2)));
+
+/** epoch ms → "20:15". 알림에 적는 휴식 종료 예정 시각 */
+export const formatTimeOfDay = (ms: number) => format(new Date(ms), "HH:mm");

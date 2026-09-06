@@ -91,7 +91,11 @@ async function staleWhileRevalidate(request, cacheName) {
 
 // 휴식 알림을 탭하면 앱으로 돌아온다
 self.addEventListener("notificationclick", (event) => {
-  event.notification.close();
+  // 진행 중인 휴식 알림은 탭해도 닫지 않는다 — 앱을 잠깐 확인하고 다시
+  // 나가더라도 종료 예정 시각이 알림창에 남아 있어야 한다.
+  if (!(event.notification.data && event.notification.data.ongoing)) {
+    event.notification.close();
+  }
   event.waitUntil(
     (async () => {
       const clientList = await self.clients.matchAll({

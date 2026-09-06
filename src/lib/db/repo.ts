@@ -277,8 +277,12 @@ export async function updateSettings(patch: Partial<Omit<Settings, "id">>) {
 
 /* ----------------------------- 휴식 타이머 ----------------------------- */
 
-export function getRestTimer() {
-  return db.restTimer.get("current");
+/**
+ * 진행 중인 휴식 타이머. null = 없음.
+ * useLiveQuery 에서 undefined(아직 로딩 중)와 구분해야 해서 명시적으로 돌려준다.
+ */
+export async function getRestTimer(): Promise<RestTimerState | null> {
+  return (await db.restTimer.get("current")) ?? null;
 }
 
 export function setRestTimer(state: Omit<RestTimerState, "id">) {
