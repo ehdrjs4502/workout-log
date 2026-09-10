@@ -5,7 +5,13 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { Sheet } from "./Sheet";
 import { Button, Toggle } from "./ui";
 import { Stepper } from "./Stepper";
-import { BODY_PARTS, type BodyPart, type Exercise } from "@/lib/db/schema";
+import {
+  BODY_PARTS,
+  EQUIPMENTS,
+  type BodyPart,
+  type Equipment,
+  type Exercise,
+} from "@/lib/db/schema";
 import { createExercise, getSettings, updateExercise } from "@/lib/db/repo";
 
 /**
@@ -55,6 +61,7 @@ function ExerciseForm({
 
   const [name, setName] = useState(exercise?.name ?? defaultName);
   const [bodyPart, setBodyPart] = useState<BodyPart>(exercise?.bodyPart ?? "chest");
+  const [equipment, setEquipment] = useState<Equipment>(exercise?.equipment ?? "etc");
   const [restSec, setRestSec] = useState<number | null>(
     exercise?.defaultRestSec ?? null,
   );
@@ -73,6 +80,7 @@ function ExerciseForm({
       await updateExercise(exercise.id, {
         name: trimmed,
         bodyPart,
+        equipment,
         defaultRestSec: effectiveRest,
         usesBodyWeight,
       });
@@ -81,6 +89,7 @@ function ExerciseForm({
       const id = await createExercise({
         name: trimmed,
         bodyPart,
+        equipment,
         defaultRestSec: effectiveRest,
         usesBodyWeight,
       });
@@ -123,6 +132,29 @@ function ExerciseForm({
             </button>
           ))}
         </div>
+      </div>
+
+      <div>
+        <span className="mb-1.5 block text-xs text-muted">기구</span>
+        <div className="grid grid-cols-5 gap-1.5">
+          {EQUIPMENTS.map((e) => (
+            <button
+              key={e.key}
+              type="button"
+              onClick={() => setEquipment(e.key)}
+              className={`h-11 rounded-xl border text-sm transition ${
+                equipment === e.key
+                  ? "border-transparent bg-text font-semibold text-bg"
+                  : "border-border bg-surface-2 text-muted"
+              }`}
+            >
+              {e.label}
+            </button>
+          ))}
+        </div>
+        <p className="mt-1.5 px-1 text-xs leading-relaxed text-muted">
+          목록 표시와 무게 ± 버튼의 증감폭에만 쓰입니다. 볼륨 계산은 달라지지 않습니다.
+        </p>
       </div>
 
       <Stepper

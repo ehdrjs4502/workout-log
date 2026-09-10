@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import Link from "next/link";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Download, HardDrive, Upload } from "lucide-react";
+import { ChevronRight, Download, FileText, HardDrive, Upload } from "lucide-react";
 import { Button, LoadingBlock, PageHeader, Toggle } from "@/components/ui";
 import { Stepper } from "@/components/Stepper";
 import { getSettings, updateSettings } from "@/lib/db/repo";
@@ -221,6 +222,20 @@ export default function SettingsPage() {
         </Section>
 
         <Section title="데이터">
+          <Link
+            href="/settings/export"
+            className="flex items-center gap-3 rounded-xl border border-border bg-surface px-4 py-3"
+          >
+            <FileText size={18} className="shrink-0 text-muted" />
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm">기록 텍스트 내보내기</span>
+              <span className="block text-xs text-muted">
+                AI에게 보여줄 텍스트로 정리
+              </span>
+            </span>
+            <ChevronRight size={18} className="shrink-0 text-muted" />
+          </Link>
+
           {storage ? (
             <div className="rounded-xl border border-border bg-surface p-3 text-xs leading-relaxed text-muted">
               <p className="flex items-center gap-1.5">

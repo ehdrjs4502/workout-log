@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Check } from "lucide-react";
 import { Stepper } from "@/components/Stepper";
 import { Button } from "@/components/ui";
+import { EQUIPMENT_STEP, type Equipment } from "@/lib/db/schema";
 
 export type SetValues = {
   /** 0 = 맨몸 (저장 시 null 로 변환된다) */
@@ -21,6 +22,7 @@ const RPE_OPTIONS = [6, 7, 8, 9, 10];
 export function SetInputPanel({
   defaults,
   usesBodyWeight = false,
+  equipment = "etc",
   submitLabel = "세트 완료",
   hint,
   onSubmit,
@@ -29,6 +31,8 @@ export function SetInputPanel({
   defaults: SetValues;
   /** 맨몸 종목이면 무게 칸은 '추가로 매단 중량' 이라는 뜻이 된다 */
   usesBodyWeight?: boolean;
+  /** 무게 ± 버튼의 증감폭을 기구에 맞춘다 (머신·케이블 스택은 5kg 단위) */
+  equipment?: Equipment;
   submitLabel?: string;
   hint?: string;
   onSubmit: (values: SetValues) => void | Promise<void>;
@@ -68,7 +72,7 @@ export function SetInputPanel({
           label={usesBodyWeight ? "추가 무게" : "무게"}
           value={weightKg}
           onChange={setWeight}
-          step={2.5}
+          step={EQUIPMENT_STEP[equipment]}
           max={500}
           suffix="kg"
           zeroLabel="맨몸"

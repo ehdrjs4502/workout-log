@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { Pencil, Plus, Trash2, TrendingUp } from "lucide-react";
 import { PageHeader, Button, LoadingBlock } from "@/components/ui";
 import { ExerciseBrowser } from "@/components/ExerciseBrowser";
 import { ExerciseFormSheet } from "@/components/ExerciseFormSheet";
@@ -52,6 +53,13 @@ export default function ExercisesPage() {
             onPick={openEdit}
             renderTrailing={(exercise) => (
               <>
+                <Link
+                  href={`/stats?exercise=${exercise.id}`}
+                  aria-label={`${exercise.name} 통계`}
+                  className="p-2.5 text-muted"
+                >
+                  <TrendingUp size={16} />
+                </Link>
                 <button
                   type="button"
                   aria-label={`${exercise.name} 수정`}

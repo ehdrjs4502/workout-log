@@ -29,6 +29,36 @@ export const BODY_PART_COLOR = Object.fromEntries(
 ) as Record<BodyPart, string>;
 
 /**
+ * 기구 종류. 표시와 입력 단위에만 쓴다 — 볼륨 계산식(stats/volume.ts)은 이 값을 보지 않는다.
+ * 그래야 장비를 나중에 고쳐도 지난 기록의 수치가 흔들리지 않는다.
+ *
+ * '맨몸' 이 없는 건 usesBodyWeight 가 이미 그 질문("볼륨에 몸무게를 더하나")에 답하기 때문이다.
+ * 풀업은 equipment: 'etc' + usesBodyWeight: true 로 표현된다.
+ */
+export type Equipment = "barbell" | "dumbbell" | "machine" | "cable" | "etc";
+
+export const EQUIPMENTS: {
+  key: Equipment;
+  label: string;
+  /** 무게 Stepper 의 증감폭. 머신·케이블은 웨이트 스택이 보통 5kg 단위다 */
+  step: number;
+}[] = [
+  { key: "barbell", label: "바벨", step: 2.5 },
+  { key: "dumbbell", label: "덤벨", step: 2.5 },
+  { key: "machine", label: "머신", step: 5 },
+  { key: "cable", label: "케이블", step: 5 },
+  { key: "etc", label: "기타", step: 2.5 },
+];
+
+export const EQUIPMENT_LABEL = Object.fromEntries(
+  EQUIPMENTS.map((e) => [e.key, e.label]),
+) as Record<Equipment, string>;
+
+export const EQUIPMENT_STEP = Object.fromEntries(
+  EQUIPMENTS.map((e) => [e.key, e.step]),
+) as Record<Equipment, number>;
+
+/**
  * 모든 레코드가 공유하는 동기화 메타.
  * 2단계에서 서버를 붙일 때 updatedAt 만으로 변경분을 뽑을 수 있도록 처음부터 넣어둔다.
  */
@@ -45,6 +75,8 @@ export type Exercise = SyncMeta & {
   id: string;
   name: string;
   bodyPart: BodyPart;
+  /** 기구 종류. 목록 표시와 무게 입력 단위에만 쓴다 (볼륨 계산에는 영향이 없다) */
+  equipment: Equipment;
   /** 사용자가 직접 추가한 종목인지 (프리셋과 구분) */
   isCustom: boolean;
   defaultRestSec: number;

@@ -40,6 +40,7 @@ export function ExerciseLogCard({
   );
 
   const usesBodyWeight = item.exercise?.usesBodyWeight ?? false;
+  const equipment = item.exercise?.equipment ?? "etc";
 
   const lastSet = item.sets.at(-1);
   const source = lastSet ?? previous;
@@ -155,6 +156,7 @@ export function ExerciseLogCard({
           <SetInputPanel
             defaults={defaults}
             usesBodyWeight={usesBodyWeight}
+            equipment={equipment}
             submitLabel={`${item.sets.length + 1}세트 완료`}
             hint={
               item.sets.length === 0 && previous
@@ -180,6 +182,7 @@ export function ExerciseLogCard({
                 rpe: editing.rpe,
               }}
               usesBodyWeight={usesBodyWeight}
+              equipment={equipment}
               submitLabel="저장"
               onSubmit={async (values) => {
                 await updateSet(editing.id, {

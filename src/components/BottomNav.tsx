@@ -5,15 +5,15 @@ import { usePathname } from "next/navigation";
 import {
   CalendarDays,
   Dumbbell,
-  FileText,
   ListChecks,
   Settings,
+  TrendingUp,
 } from "lucide-react";
 
 const TABS = [
   { href: "/", label: "오늘", icon: Dumbbell },
   { href: "/calendar", label: "캘린더", icon: CalendarDays },
-  { href: "/export", label: "내보내기", icon: FileText },
+  { href: "/stats", label: "통계", icon: TrendingUp },
   { href: "/exercises", label: "종목", icon: ListChecks },
   { href: "/settings", label: "설정", icon: Settings },
 ] as const;

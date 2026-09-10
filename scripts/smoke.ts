@@ -17,6 +17,7 @@ import {
   endSession,
   getActiveSession,
   lastSetOfExercise,
+  listDatedSets,
   listExercises,
   listSessionsBetween,
   loadSession,
@@ -26,7 +27,9 @@ import {
 import { completeSet } from "@/lib/session/actions";
 import { createBackup, restoreBackup, type Backup } from "@/lib/export/backup";
 import { sessionsToText } from "@/lib/export/toText";
-import { sessionVolume } from "@/lib/stats/volume";
+import { sessionVolume, sumVolume } from "@/lib/stats/volume";
+import { exerciseTrend, type TrendPoint } from "@/lib/stats/history";
+import { CHART, PLOT_H, hitBands, scaleOf, xPositions } from "@/lib/stats/chartScale";
 import { todayKey } from "@/lib/format/date";
 
 let passed = 0;
@@ -56,6 +59,12 @@ async function main() {
   const exercises = await listExercises();
   check("프리셋 종목이 들어갔다", exercises.length > 30, exercises.length);
   check("설정 레코드가 있다", (await db.settings.get("app")) !== undefined);
+  check(
+    "프리셋에 기구가 배정된다",
+    exercises.find((e) => e.name === "벤치프레스")?.equipment === "barbell" &&
+      exercises.find((e) => e.name === "덤벨컬")?.equipment === "dumbbell" &&
+      exercises.find((e) => e.name === "랫풀다운")?.equipment === "machine",
+  );
 
   console.log("\n[2] 세션 시작");
   const sessionId = await startSession();
@@ -216,7 +225,9 @@ async function main() {
   const asV1: Backup = {
     ...current,
     version: 1,
-    exercises: current.exercises.map((e) => strip(e, "usesBodyWeight")),
+    exercises: current.exercises.map((e) =>
+      strip(strip(e, "usesBodyWeight"), "equipment"),
+    ),
     setLogs: current.setLogs.map((s) => strip(s, "bodyWeightKg")),
     settings: current.settings.map((s) => strip(s, "bodyWeightKg")),
   };
@@ -229,8 +240,24 @@ async function main() {
     "v1 세트는 몸무게 없음으로 채워진다",
     (await loadSession(bwSession))!.items[0].sets[0].bodyWeightKg === null,
   );
+  check(
+    "v1 백업이 v2 를 건너뛰지 않고 기구까지 채워진다",
+    (await listExercises()).find((e) => e.name === "덤벨컬")?.equipment === "dumbbell",
+  );
 
-  console.log("\n[12] v1 → v2 DB 마이그레이션");
+  // v2 = 기구만 없던 버전
+  const asV2: Backup = {
+    ...current,
+    version: 2,
+    exercises: current.exercises.map((e) => strip(e, "equipment")),
+  };
+  await restoreBackup(asV2, "replace");
+  check(
+    "v2 백업의 종목에 기구가 채워진다",
+    (await listExercises()).find((e) => e.name === "랫풀다운")?.equipment === "machine",
+  );
+
+  console.log("\n[12] v1 → v3 DB 마이그레이션");
   const legacyName = "workout-log-legacy";
   const legacy = new Dexie(legacyName);
   // v1 시절 스키마 그대로. 여기가 실제 폰에 깔려 있는 DB 의 모습이다.
@@ -293,7 +320,142 @@ async function main() {
     "v1 설정의 몸무게는 null 로 채워진다",
     (await migrated.settings.get("app"))?.bodyWeightKg === null,
   );
+  check(
+    "v1 DB 가 v3 까지 연달아 올라가 기구도 채워진다",
+    (await migrated.exercises.get("x1"))?.equipment === "etc",
+  );
   migrated.close();
+
+  console.log("\n[13] 통계 집계");
+  // 날짜를 명시해 과거 세션을 만든다. 시계는 오늘에 고정돼 있으므로 completedAt 은
+  // 전부 오늘이 되는데, 그런데도 통계가 session.date 를 따라야 한다는 게 요점이다.
+  const squat = (await listExercises()).find((e) => e.name === "스쿼트")!;
+
+  const logDay = async (date: string, weights: [number, number][]) => {
+    const id = await startSession(date);
+    const se = await addExerciseToSession(id, squat.id);
+    for (const [weightKg, reps] of weights) {
+      await completeSet({
+        sessionId: id,
+        sessionExerciseId: se,
+        exerciseId: squat.id,
+        weightKg,
+        reps,
+        rpe: null,
+        usesBodyWeight: false,
+        restTargetSec: 180,
+      });
+      advance(180);
+    }
+    await endSession(id);
+  };
+
+  await logDay("2024-05-01", [
+    [100, 5],
+    [100, 5],
+  ]);
+  await logDay("2024-05-08", [
+    [110, 5],
+    [110, 5],
+  ]);
+
+  const dated = await listDatedSets("2024-05-01", "2024-05-08");
+  const squatSets = dated.filter((s) => s.exerciseId === squat.id);
+  check("범위 안의 세트를 모두 집어온다", squatSets.length === 4, squatSets.length);
+  check(
+    "세트의 날짜는 completedAt 이 아니라 세션 날짜다",
+    squatSets.every((s) => s.date === "2024-05-01" || s.date === "2024-05-08") &&
+      squatSets.every((s) => new Date(s.completedAt).getFullYear() !== 2024),
+  );
+
+  const trend = exerciseTrend(dated, squat.id, "day");
+  check("날짜 오름차순 두 점으로 묶인다", trend.length === 2 && trend[0].date === "2024-05-01", trend.map((t) => t.date));
+  check(
+    "볼륨은 sumVolume 과 같다",
+    trend[0].volume === sumVolume(squatSets.filter((s) => s.date === "2024-05-01")) &&
+      trend[0].volume === 1000,
+    trend[0].volume,
+  );
+  check("횟수는 그날 합계다", trend[0].reps === 10 && trend[1].reps === 10, [
+    trend[0].reps,
+    trend[1].reps,
+  ]);
+  check("볼륨이 오른 게 그래프에도 그대로 보인다", trend[1].volume === 1100, trend[1].volume);
+  check("최고 중량은 기록표용으로 따로 남는다", trend[1].maxWeightKg === 110, trend[1].maxWeightKg);
+
+  const weekly = exerciseTrend(dated, squat.id, "week");
+  check(
+    "주 단위로 묶으면 다른 주는 그대로 두 점",
+    weekly.length === 2,
+    weekly.map((w) => w.date),
+  );
+
+  const narrow = await listDatedSets("2024-05-02", "2024-05-08");
+  check(
+    "범위 밖 날짜는 빠진다",
+    narrow.filter((s) => s.exerciseId === squat.id).length === 2,
+  );
+
+  console.log("\n[14] 그래프 좌표");
+  const point = (date: string, volume: number, reps: number): TrendPoint => ({
+    date,
+    volume,
+    reps,
+    setCount: 1,
+    maxWeightKg: 0,
+  });
+  const inX = (x: number) =>
+    Number.isFinite(x) && x >= CHART.pad.l - 0.01 && x <= CHART.w - CHART.pad.r + 0.01;
+  const inY = (y: number) =>
+    Number.isFinite(y) && y >= CHART.pad.t - 0.01 && y <= CHART.pad.t + PLOT_H + 0.01;
+
+  const spread = [point("2024-05-01", 1000, 10), point("2024-05-08", 1100, 12), point("2024-06-20", 1400, 9)];
+  const spreadX = xPositions(spread);
+  check("좌표가 플롯 안에 들어온다", spreadX.every(inX), spreadX);
+  check(
+    "쉰 기간만큼 x 간격이 벌어진다",
+    spreadX[1] - spreadX[0] < spreadX[2] - spreadX[1],
+    spreadX,
+  );
+
+  const spreadY = spread.map((p) => scaleOf(spread.map((q) => q.volume)).y(p.volume));
+  check("y 도 플롯 안에 들어온다", spreadY.every(inY), spreadY);
+  check("볼륨이 클수록 위로 간다", spreadY[0] > spreadY[2], spreadY);
+
+  // 값이 전부 같은 경우 — 폭이 0 이라 나눗셈이 터지기 쉬운 자리
+  const flat = [point("2024-05-01", 500, 5), point("2024-05-08", 500, 5)];
+  const flatScale = scaleOf(flat.map((p) => p.volume));
+  check(
+    "값이 전부 같아도 NaN 없이 수평선이 된다",
+    flat.every((p) => inY(flatScale.y(p.volume))) &&
+      flatScale.y(500) === flatScale.y(500),
+    flatScale.y(500),
+  );
+
+  // 점이 하나뿐인 경우
+  const single = [point("2024-05-01", 700, 7)];
+  const singleX = xPositions(single);
+  check("점 하나면 가운데에 놓인다", singleX.length === 1 && inX(singleX[0]), singleX);
+  check(
+    "점 하나여도 y 가 멀쩡하다",
+    inY(scaleOf(single.map((p) => p.volume)).y(700)),
+  );
+
+  const bands = hitBands(spreadX);
+  check(
+    "터치 영역이 겹치지 않고 이어진다",
+    bands.every(([from, to]) => to > from) &&
+      bands[0][1] === bands[1][0] &&
+      bands[1][1] === bands[2][0],
+    bands,
+  );
+  check(
+    "터치 영역이 양 끝까지 닿는다",
+    bands[0][0] === CHART.pad.l && bands[2][1] === CHART.w - CHART.pad.r,
+    [bands[0][0], bands[2][1]],
+  );
+
+  check("빈 배열에도 터지지 않는다", xPositions([]).length === 0 && scaleOf([]).ticks.length === 0);
 
   Date.now = realNow;
 

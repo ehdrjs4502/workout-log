@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { isPresetBodyWeight } from "@/lib/db/presets";
+import { inferEquipment, isPresetBodyWeight } from "@/lib/db/presets";
 import type {
   Exercise,
   Session,
@@ -8,7 +8,7 @@ import type {
   Settings,
 } from "@/lib/db/schema";
 
-export const BACKUP_VERSION = 2;
+export const BACKUP_VERSION = 3;
 
 export type Backup = {
   version: number;
@@ -55,39 +55,61 @@ export type ImportResult = {
 };
 
 /** v1 에는 맨몸 운동 관련 필드가 아예 없었다 */
-type V1Backup = Omit<Backup, "version" | "exercises" | "setLogs" | "settings"> & {
+type V1Backup = Omit<V2Backup, "version" | "exercises" | "setLogs" | "settings"> & {
   version: 1;
-  exercises: Omit<Exercise, "usesBodyWeight">[];
+  exercises: Omit<Exercise, "usesBodyWeight" | "equipment">[];
   setLogs: Omit<SetLog, "bodyWeightKg">[];
   settings: Omit<Settings, "bodyWeightKg">[];
 };
 
+/** v2 에는 기구 종류가 없었다 */
+type V2Backup = Omit<Backup, "version" | "exercises"> & {
+  version: 2;
+  exercises: Omit<Exercise, "equipment">[];
+};
+
+function v1ToV2(v1: V1Backup): V2Backup {
+  return {
+    ...v1,
+    version: 2,
+    // 이름으로 프리셋 맨몸 종목을 알아본다. 나머지는 사용자가 종목 화면에서 켜면 된다.
+    exercises: v1.exercises.map((e) => ({
+      ...e,
+      usesBodyWeight: isPresetBodyWeight(e.name),
+    })),
+    // 그때는 몸무게를 안 받았으니 소급 적용하지 않는다 (없던 사실을 지어내지 않는다)
+    setLogs: v1.setLogs.map((s) => ({ ...s, bodyWeightKg: null })),
+    settings: v1.settings.map((s) => ({ ...s, bodyWeightKg: null })),
+  };
+}
+
+function v2ToV3(v2: V2Backup): Backup {
+  return {
+    ...v2,
+    version: 3,
+    exercises: v2.exercises.map((e) => ({ ...e, equipment: inferEquipment(e.name) })),
+  };
+}
+
 /**
  * 예전 백업 파일도 계속 읽을 수 있어야 한다.
  * 폰에 받아둔 파일이 앱 업데이트 한 번에 "지원하지 않는 버전" 이 되면 그게 곧 기록 유실이다.
+ *
+ * 한 단계씩 밟아 올린다. v1 파일이 v2 를 건너뛰고 v3 로 점프하면
+ * 버전이 하나 늘 때마다 분기가 배로 늘어난다.
  */
 function normalizeBackup(backup: Backup): Backup {
-  if (backup.version === BACKUP_VERSION) return backup;
+  let data: V1Backup | V2Backup | Backup = backup;
 
-  if (backup.version === 1) {
-    const v1 = backup as unknown as V1Backup;
-    return {
-      ...v1,
-      version: BACKUP_VERSION,
-      // 이름으로 프리셋 맨몸 종목을 알아본다. 나머지는 사용자가 종목 화면에서 켜면 된다.
-      exercises: v1.exercises.map((e) => ({
-        ...e,
-        usesBodyWeight: isPresetBodyWeight(e.name),
-      })),
-      // 그때는 몸무게를 안 받았으니 소급 적용하지 않는다 (없던 사실을 지어내지 않는다)
-      setLogs: v1.setLogs.map((s) => ({ ...s, bodyWeightKg: null })),
-      settings: v1.settings.map((s) => ({ ...s, bodyWeightKg: null })),
-    };
+  if (data.version === 1) data = v1ToV2(data as V1Backup);
+  if (data.version === 2) data = v2ToV3(data as V2Backup);
+
+  if (data.version !== BACKUP_VERSION) {
+    throw new Error(
+      `지원하지 않는 백업 버전입니다 (파일: ${backup.version}, 앱: ${BACKUP_VERSION})`,
+    );
   }
-
-  throw new Error(
-    `지원하지 않는 백업 버전입니다 (파일: ${backup.version}, 앱: ${BACKUP_VERSION})`,
-  );
+  return data as Backup;
 }
 
 /**

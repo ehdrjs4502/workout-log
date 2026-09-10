@@ -5,6 +5,7 @@ import {
   ALIVE,
   DEFAULT_SETTINGS,
   type BodyPart,
+  type Equipment,
   type Exercise,
   type RestTimerState,
   type Session,
@@ -29,6 +30,7 @@ export function listExercises() {
 export async function createExercise(input: {
   name: string;
   bodyPart: BodyPart;
+  equipment?: Equipment;
   defaultRestSec?: number;
   usesBodyWeight?: boolean;
 }): Promise<string> {
@@ -37,6 +39,7 @@ export async function createExercise(input: {
     id,
     name: input.name.trim(),
     bodyPart: input.bodyPart,
+    equipment: input.equipment ?? "etc",
     isCustom: true,
     defaultRestSec: input.defaultRestSec ?? 90,
     usesBodyWeight: input.usesBodyWeight ?? false,
@@ -260,6 +263,44 @@ export async function loadSessions(sessionIds: string[]): Promise<HydratedSessio
   for (const id of sessionIds) {
     const s = await loadSession(id);
     if (s) out.push(s);
+  }
+  return out;
+}
+
+/* ------------------------------ 통계 조회 ------------------------------ */
+
+/** 세트에 그 세트가 속한 세션의 날짜를 붙인 것 */
+export type DatedSet = SetLog & { date: string };
+
+/**
+ * 통계 전용 벌크 로더.
+ *
+ * 세트는 completedAt(epoch ms) 만 갖고 있지만, 날짜의 정본은 session.date 다.
+ * completedAt 을 날짜로 환산하면 자정을 넘긴 세트가 다음 날로 밀린다 — 새벽 운동이
+ * 하루 두 개로 쪼개져 그래프에 찍히면 곤란하다. 그래서 세션의 날짜를 세트에 붙여준다.
+ *
+ * loadSessions() 처럼 세션마다 훑으면 반년치에 세트 조회가 수백 번 뜨므로,
+ * 인덱스 스캔 세 번으로 끝내고 이어 붙이는 건 메모리에서 한다.
+ */
+export async function listDatedSets(
+  fromKey: string,
+  toKey: string,
+): Promise<DatedSet[]> {
+  const sessions = await listSessionsBetween(fromKey, toKey);
+  const dateBySession = new Map(sessions.map((s) => [s.id, s.date]));
+
+  const links = await db.sessionExercises.where("deletedAt").equals(ALIVE).toArray();
+  const dateByLink = new Map<string, string>();
+  for (const link of links) {
+    const date = dateBySession.get(link.sessionId);
+    if (date !== undefined) dateByLink.set(link.id, date);
+  }
+
+  const sets = await db.setLogs.where("deletedAt").equals(ALIVE).toArray();
+  const out: DatedSet[] = [];
+  for (const set of sets) {
+    const date = dateByLink.get(set.sessionExerciseId);
+    if (date !== undefined) out.push({ ...set, date });
   }
   return out;
 }

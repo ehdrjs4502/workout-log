@@ -8,18 +8,21 @@ import { Button, PageHeader } from "@/components/ui";
 import { listSessionsBetween, loadSessions } from "@/lib/db/repo";
 import { sessionsToText, type ExportMode } from "@/lib/export/toText";
 import { copyText } from "@/lib/export/clipboard";
-import { toDateKey } from "@/lib/format/date";
+import { toDateKey, todayKey } from "@/lib/format/date";
 
-type RangeKey = "today" | "d7" | "month" | "d30";
+type RangeKey = "today" | "d7" | "month" | "d30" | "custom";
 
 const RANGES: { key: RangeKey; label: string }[] = [
   { key: "today", label: "오늘" },
-  { key: "d7", label: "최근 7일" },
+  { key: "d7", label: "7일" },
   { key: "month", label: "이번 달" },
-  { key: "d30", label: "최근 30일" },
+  { key: "d30", label: "30일" },
+  { key: "custom", label: "직접" },
 ];
 
-function rangeToKeys(range: RangeKey): [string, string] {
+type CustomRange = { from: string; to: string };
+
+function rangeToKeys(range: RangeKey, custom: CustomRange): [string, string] {
   const now = new Date();
   switch (range) {
     case "today":
@@ -30,15 +33,24 @@ function rangeToKeys(range: RangeKey): [string, string] {
       return [toDateKey(startOfMonth(now)), toDateKey(endOfMonth(now))];
     case "d30":
       return [toDateKey(subDays(now, 29)), toDateKey(now)];
+    case "custom":
+      // 거꾸로 고르면 조용히 뒤집는다. 빈 결과만 보여주면 원인을 짐작하기 어렵다.
+      return custom.from <= custom.to
+        ? [custom.from, custom.to]
+        : [custom.to, custom.from];
   }
 }
 
 export default function ExportPage() {
   const [range, setRange] = useState<RangeKey>("today");
+  const [custom, setCustom] = useState<CustomRange>(() => ({
+    from: todayKey(),
+    to: todayKey(),
+  }));
   const [mode, setMode] = useState<ExportMode>("simple");
   const [copied, setCopied] = useState(false);
 
-  const [from, to] = rangeToKeys(range);
+  const [from, to] = rangeToKeys(range, custom);
 
   const sessions = useLiveQuery(async () => {
     const rows = await listSessionsBetween(from, to);
@@ -66,12 +78,16 @@ export default function ExportPage() {
 
   return (
     <>
-      <PageHeader title="내보내기" subtitle="AI에게 보여줄 텍스트로 정리" />
+      <PageHeader
+        title="내보내기"
+        subtitle="AI에게 보여줄 텍스트로 정리"
+        back="/settings"
+      />
 
       <main className="flex-1 space-y-4 p-4">
         <div>
           <span className="mb-1.5 block text-xs text-muted">기간</span>
-          <div className="grid grid-cols-4 gap-1.5">
+          <div className="grid grid-cols-5 gap-1.5">
             {RANGES.map((r) => (
               <button
                 key={r.key}
@@ -87,6 +103,21 @@ export default function ExportPage() {
               </button>
             ))}
           </div>
+
+          {range === "custom" ? (
+            <div className="mt-2 grid grid-cols-2 gap-1.5">
+              <DateField
+                label="시작"
+                value={custom.from}
+                onChange={(from) => setCustom((c) => ({ ...c, from }))}
+              />
+              <DateField
+                label="끝"
+                value={custom.to}
+                onChange={(to) => setCustom((c) => ({ ...c, to }))}
+              />
+            </div>
+          ) : null}
         </div>
 
         <div>
@@ -150,5 +181,34 @@ export default function ExportPage() {
         </div>
       </main>
     </>
+  );
+}
+
+/**
+ * 네이티브 date input 을 쓴다. 폰에서는 OS 피커가 뜨고,
+ * globals.css 의 color-scheme: dark 덕에 달력도 알아서 어둡게 나온다.
+ */
+function DateField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1 block px-1 text-xs text-muted">{label}</span>
+      <input
+        type="date"
+        value={value}
+        onChange={(e) => {
+          // 사용자가 입력칸을 비우면 빈 문자열이 온다 — 그때는 값을 유지한다
+          if (e.target.value) onChange(e.target.value);
+        }}
+        className="h-11 w-full rounded-xl border border-border bg-surface-2 px-3 text-sm tabular-nums outline-none focus:border-accent [&::-webkit-calendar-picker-indicator]:opacity-60"
+      />
+    </label>
   );
 }

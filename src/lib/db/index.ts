@@ -10,7 +10,7 @@ import {
   type Settings,
   type BodyPart,
 } from "./schema";
-import { isPresetBodyWeight, PRESET_EXERCISES } from "./presets";
+import { inferEquipment, isPresetBodyWeight, PRESET_EXERCISES } from "./presets";
 
 /**
  * crypto.randomUUID() 는 secure context 전용이라
@@ -75,6 +75,19 @@ class WorkoutDB extends Dexie {
           });
       });
 
+    // v3: 기구 종류 추가. 인덱스는 그대로고(종목은 수십 개뿐이라 메모리 필터로 충분),
+    // 값은 이름으로 되짚어 채운다.
+    this.version(3)
+      .stores({})
+      .upgrade(async (tx) => {
+        await tx
+          .table<Exercise>("exercises")
+          .toCollection()
+          .modify((row) => {
+            row.equipment = inferEquipment(row.name);
+          });
+      });
+
     this.on("populate", () => seed(this));
   }
 }
@@ -83,11 +96,12 @@ function seed(db: WorkoutDB) {
   const now = Date.now();
   const rows: Exercise[] = [];
   for (const [part, list] of Object.entries(PRESET_EXERCISES)) {
-    for (const [name, rest, usesBodyWeight] of list) {
+    for (const [name, rest, equipment, usesBodyWeight] of list) {
       rows.push({
         id: newId(),
         name,
         bodyPart: part as BodyPart,
+        equipment,
         isCustom: false,
         defaultRestSec: rest,
         usesBodyWeight: usesBodyWeight ?? false,
