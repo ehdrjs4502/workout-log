@@ -141,7 +141,12 @@ async function main() {
   console.log("\n[7] 텍스트 내보내기");
   const simple = sessionsToText([loaded], "simple");
   const detailed = sessionsToText([loaded], "detailed");
-  check("간단 모드에 세트가 들어간다", simple.includes("벤치프레스 60kgx10, 60kgx9, 55kgx8"), simple);
+  check(
+    "간단 모드에 세트가 들어간다",
+    simple.includes("벤치프레스 (바벨) 60kgx10, 60kgx9, 55kgx8"),
+    simple,
+  );
+  check("상세 모드 제목에도 기구가 붙는다", detailed.includes("### 벤치프레스 (바벨)"), detailed);
   check("상세 모드에 RPE 가 들어간다", detailed.includes("RPE 7"));
   check("상세 모드에 휴식 시간이 들어간다", detailed.includes("휴식 1:35"), detailed);
   check("상세 모드에 총 볼륨이 들어간다", detailed.includes("총 볼륨 1,580kg"), detailed);
@@ -208,6 +213,11 @@ async function main() {
   const bwText = sessionsToText([bwLoaded], "detailed");
   check("내보내기 머리말에 체중이 붙는다", bwText.includes("체중 75kg"), bwText);
   check("추가 중량은 맨몸+20kg 로 적힌다", bwText.includes("맨몸+20kg"), bwText);
+  check(
+    "'기타' 기구는 이름에 붙이지 않는다",
+    bwText.includes("### 풀업\n") && !bwText.includes("풀업 (기타)"),
+    bwText,
+  );
 
   await updateSettings({ bodyWeightKg: 80 });
   check(

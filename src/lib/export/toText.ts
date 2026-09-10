@@ -1,4 +1,5 @@
-import type { HydratedSession } from "@/lib/db/repo";
+import type { HydratedSession, HydratedSessionExercise } from "@/lib/db/repo";
+import { EQUIPMENT_LABEL } from "@/lib/db/schema";
 import {
   formatClock,
   formatDateFullKo,
@@ -12,6 +13,19 @@ import {
 } from "@/lib/stats/volume";
 
 export type ExportMode = "simple" | "detailed";
+
+/**
+ * "랫풀다운 (머신)" — 이름만으로는 뭘로 들었는지 알 수 없는 종목이 많다.
+ * 머신이냐 프리웨이트냐에 따라 평가가 갈리니 붙여준다.
+ * '기타' 는 알려주는 게 없으므로 적지 않는다 (맨몸 여부는 머리말의 체중이 말한다).
+ */
+function nameOf(item: HydratedSessionExercise): string {
+  const exercise = item.exercise;
+  if (!exercise) return "알 수 없는 종목";
+  return exercise.equipment === "etc"
+    ? exercise.name
+    : `${exercise.name} (${EQUIPMENT_LABEL[exercise.equipment]})`;
+}
 
 function header(session: HydratedSession) {
   const duration = session.endedAt ? session.endedAt - session.startedAt : 0;
@@ -33,7 +47,7 @@ function toSimple(session: HydratedSession): string {
     const sets = item.sets
       .map((s) => `${formatSetWeight(s)}x${s.reps}`)
       .join(", ");
-    lines.push(`${item.exercise?.name ?? "알 수 없는 종목"} ${sets}`);
+    lines.push(`${nameOf(item)} ${sets}`);
   }
   return lines.join("\n");
 }
@@ -44,7 +58,7 @@ function toDetailed(session: HydratedSession): string {
 
   for (const item of session.items) {
     if (item.sets.length === 0) continue;
-    lines.push(`### ${item.exercise?.name ?? "알 수 없는 종목"}`);
+    lines.push(`### ${nameOf(item)}`);
 
     item.sets.forEach((set, i) => {
       const parts = [`${i + 1}. ${formatSetWeight(set)} x ${set.reps}`];
