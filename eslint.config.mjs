@@ -12,7 +12,17 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+
+    "playwright-report/**",
+    "test-results/**",
   ]),
+
+  // Playwright 픽스처의 콜백 인자 이름이 use 라서 react-hooks 규칙이 훅으로 오해한다.
+  // e2e 디렉터리에는 React 가 없으므로 이 규칙만 끈다.
+  {
+    files: ["e2e/**/*.ts"],
+    rules: { "react-hooks/rules-of-hooks": "off" },
+  },
 ]);
 
 export default eslintConfig;
