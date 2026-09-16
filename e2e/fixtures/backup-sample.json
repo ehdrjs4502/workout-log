@@ -1,0 +1,58 @@
+{
+  "version": 3,
+  "exportedAt": "2025-06-15T10:00:00.000Z",
+  "exercises": [
+    {
+      "id": "e2e-ex-0001",
+      "name": "가져오기 테스트 종목",
+      "bodyPart": "chest",
+      "equipment": "barbell",
+      "isCustom": true,
+      "defaultRestSec": 120,
+      "usesBodyWeight": false,
+      "createdAt": 1750000000000,
+      "updatedAt": 1750000000000,
+      "deletedAt": 0
+    }
+  ],
+  "sessions": [
+    {
+      "id": "e2e-sess-0001",
+      "date": "2025-06-15",
+      "startedAt": 1750000000000,
+      "endedAt": 1750003600000,
+      "createdAt": 1750000000000,
+      "updatedAt": 1750000000000,
+      "deletedAt": 0
+    }
+  ],
+  "sessionExercises": [
+    {
+      "id": "e2e-link-0001",
+      "sessionId": "e2e-sess-0001",
+      "exerciseId": "e2e-ex-0001",
+      "order": 0,
+      "createdAt": 1750000000000,
+      "updatedAt": 1750000000000,
+      "deletedAt": 0
+    }
+  ],
+  "setLogs": [
+    {
+      "id": "e2e-set-0001",
+      "sessionExerciseId": "e2e-link-0001",
+      "exerciseId": "e2e-ex-0001",
+      "order": 0,
+      "weightKg": 50,
+      "bodyWeightKg": null,
+      "reps": 10,
+      "rpe": null,
+      "restSec": null,
+      "completedAt": 1750000180000,
+      "createdAt": 1750000000000,
+      "updatedAt": 1750000000000,
+      "deletedAt": 0
+    }
+  ],
+  "settings": []
+}
