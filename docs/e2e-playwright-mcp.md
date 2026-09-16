@@ -47,16 +47,32 @@ MCP(Model Context Protocol)는 AI 에이전트가 외부 도구를 쓰기 위한
 `browser_snapshot`이 돌려주는 것은 이미지가 아니라 **접근성 트리(YAML)** 다.
 
 ```yaml
-- banner:
-  - heading "운동 기록" [level=1]
-- main:
-  - button "운동 시작" [ref=e17]
-  - heading "최근 기록" [level=2]
-  - paragraph: 아직 기록이 없습니다
-- navigation:
-  - link "오늘" [ref=e23] [active]
-  - link "캘린더" [ref=e24]
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - paragraph [ref=e4]: 2026-09-16 (수)
+    - heading "운동 기록" [level=1] [ref=e5]
+  - main [ref=e6]:
+    - button "운동 시작" [ref=e48]
+    - generic [ref=e8]:
+      - heading "최근 기록" [level=2] [ref=e9]
+      - paragraph [ref=e59]: 아직 기록이 없습니다
+  - navigation [ref=e12]:
+    - list [ref=e13]:
+      - listitem [ref=e14]:
+        - link "오늘" [ref=e15] [cursor=pointer]:
+          - /url: /
 ```
+
+(위는 실제로 받은 트리를 줄인 것이다. 4절에 원본이 있다.)
+
+트리를 처음 보면 헷갈리는 표기가 둘 있다:
+
+- **`[active]`는 '현재 탭'이 아니라 `document.activeElement`다.** 즉 포커스 표시다.
+  버튼을 누른 직후 스냅샷을 찍으면 그 버튼에 `[active]`가 붙어 있다.
+- **`aria-current="page"`는 트리에 나오지 않는다.** `BottomNav`는 현재 탭에
+  `aria-current="page"`를 붙이지만([src/components/BottomNav.tsx:40](../src/components/BottomNav.tsx#L40))
+  스냅샷에는 흔적이 없다. "지금 어느 탭인가"는 스냅샷으로 알 수 없고,
+  `toHaveAttribute("aria-current", "page")`로 단언해야 한다 — `nav.spec.ts`가 그렇게 하고 있다.
 
 여기서 얻는 것:
 
@@ -119,19 +135,31 @@ MCP(Model Context Protocol)는 AI 에이전트가 외부 도구를 쓰기 위한
 "운동을 시작하고 벤치프레스를 추가해줘" 한 마디는 대략 이렇게 풀린다:
 
 ```
-browser_navigate("http://localhost:3000")
-  → 스냅샷: button "운동 시작" [ref=e17]
-browser_click(element="운동 시작 버튼", ref="e17")
-  → 스냅샷: URL이 /session/… 으로 바뀜, button "종목 추가" [ref=e31]
-browser_click(element="종목 추가 버튼", ref="e31")
-  → 스냅샷: dialog "종목 추가" 안에 searchbox [ref=e40]
-browser_type(element="종목 검색", ref="e40", text="벤치프레스")
-  → 스냅샷: button "벤치프레스 가슴 · 바벨 · 휴식 180초" [ref=e52]
-browser_click(element="벤치프레스 행", ref="e52")
+browser_navigate(url="http://localhost:3000")
+  → 스냅샷: button "운동 시작" [ref=e48]
+browser_click(element="운동 시작 버튼", target="e48")
+  → 스냅샷: URL이 /session/… 으로 바뀜, button "종목 추가" [ref=e94]
+browser_click(element="종목 추가 버튼", target="e94")
+  → 스냅샷: dialog "종목 추가" 안에 searchbox [ref=e109]
+browser_type(element="종목 검색", target="e109", text="벤치프레스")
+  → 스냅샷: button "벤치프레스 가슴 · 바벨 · 휴식 180초" [ref=e135]
+browser_click(element="벤치프레스 행", target="e135")
 ```
 
-`ref`는 **그 스냅샷 시점에만 유효한 임시 핸들**이다. 화면이 바뀌면 새 스냅샷을 찍어
-새 ref를 받아야 한다. 그래서 MCP 흐름은 자연히 `동작 → 관찰 → 동작` 의 반복이 된다.
+위 ref 번호는 4절 실습에서 실제로 받은 값이다.
+
+두 가지를 짚어둔다:
+
+- **인자 이름은 `ref`가 아니라 `target`이다.** 스냅샷은 `[ref=e135]`로 출력하면서
+  도구는 `target="e135"`로 받는다. 문서를 먼저 읽으면 반드시 한 번 틀리는 자리다.
+  `target`은 ref 대신 CSS 셀렉터도 받는다.
+- **`element`(사람이 읽는 설명)는 생략할 수 있지만 쓰는 게 좋다.** 승인 프롬프트와
+  로그에 그대로 나온다. 나중에 대화 기록을 다시 읽을 때 "e135가 뭐였지"를 안 찾아도 된다.
+
+`ref`의 수명은 **그 DOM 노드의 수명**이다. "스냅샷마다 새로 받아야 하는 일회용 번호"가
+아니고, 재렌더가 일어나도 노드가 살아있으면 같은 번호를 유지한다 (4절에 실측이 있다).
+그래도 언제 죽는지를 예측하려 들지 말고 `동작 → 관찰 → 동작`을 지키는 편이 싸다.
+죽은 ref를 써도 무슴 사고가 나는 것도 아니고, 즉시 에러가 난다.
 
 ---
 
@@ -159,7 +187,402 @@ MCP만 쓰면 회귀 테스트가 없고, spec만 쓰면 처음 화면을 파악
 
 ---
 
-## 4. 이 프로젝트의 테스트 구조
+## 4. 실습 로그 — MCP로 직접 몰아본 기록
+
+2026-09-16, `pnpm dev`(Next 16.3.4 Turbopack)를 띄우고 **`browser_*` 도구만으로**
+운동 시작 → 벤치프레스 추가 → 2세트 → 종료까지 한 바퀴 돌렸다.
+`pnpm test:e2e`는 한 번도 돌리지 않았다.
+
+첫 줄은 뷰포트부터. MCP 브라우저는 기본이 데스크톱이라
+`playwright.config.ts`의 `devices["Pixel 7"]`과 맞춰줘야 같은 화면을 본다:
+
+```
+browser_resize(width=412, height=915)
+```
+
+### (1) 스냅샷이 대화에 안 올 수도 있다
+
+시작하자마자 예상과 달랐던 점. `browser_navigate` 결과가 이렇게 왔다:
+
+```
+### Page
+- Page URL: http://localhost:3000/
+- Page Title: 운동 기록
+### Snapshot
+- [Snapshot](.playwright-mcp\page-2026-09-16T13-11-20-328Z.yml)
+### Events
+- New console entries: .playwright-mcp\console-2026-09-16T13-11-20-011Z.log#L1-L2
+```
+
+트리가 아니라 **파일 경로**다. 규칙은 이렇다:
+
+- `browser_navigate` / `browser_click` 같은 **동작** 도구가 덧붙여 주는 스냅샷 → `.playwright-mcp/`에 파일로 저장
+- `browser_snapshot`을 명시적으로 부르면 → 결과가 그대로 인라인으로 온다
+
+그래서 실습 내내 "클릭 → `cat`으로 파일 읽기"를 반복하거나,
+큰 페이지에서는 `browser_find`로 필요한 조각만 도려내는 편이 훨씬 편했다.
+다행히 `.playwright-mcp/`는 이미 `.gitignore`에 들어 있다.
+
+### (2) 첫 페인트의 "불러오는 중…"을 실제로 잡았다
+
+6절(9)에 적어둔 것이 바로 눈에 보였다. 첫 스냅샷 전문이다:
+
+```yaml
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - paragraph [ref=e4]: 2026-09-16 (수)
+    - heading "운동 기록" [level=1] [ref=e5]
+  - main [ref=e6]:
+    - generic [ref=e7]: 불러오는 중…
+    - generic [ref=e8]:
+      - heading "최근 기록" [level=2] [ref=e9]
+      - generic [ref=e10]: 불러오는 중…
+  - navigation [ref=e12]:
+    - list [ref=e13]:
+      - listitem [ref=e14]:
+        - link "오늘" [ref=e15] [cursor=pointer]:
+          - /url: /
+```
+
+`main` 안이 통째로 로딩 문구다. `운동 시작` 버튼은 아직 없다.
+
+**어떻게 넘겼는가: 그냥 `browser_snapshot`을 한 번 더 찍었다.**
+`browser_wait_for(textGone="불러오는 중…")`을 쓸 생각이었는데 필요가 없었다 —
+다음 도구 호출까지의 왕복 시간이 이미 로딩보다 길었다.
+6절(9)의 "로딩이 사라졌는지를 단언하지 말라"는 MCP에서도 그대로 통한다.
+
+두 번째 스냅샷에서야 본 것들:
+
+```yaml
+    - main [ref=e6]:
+      - generic [ref=e41]:
+        - button "닫기" [ref=e42]
+        - paragraph [ref=e46]: 홈 화면에 추가해 주세요
+        - paragraph [ref=e47]: 설치하면 오프라인에서도 열리고, 휴식 알림을 받을 수 있습니다.
+      - button "운동 시작" [ref=e48]
+      ...
+  - button "Open Next.js Dev Tools" [ref=e66] [cursor=pointer]
+  - alert [ref=e70]
+```
+
+spec에서는 몰랐던 것 세 개가 드러난다:
+
+- **PWA 설치 배너가 떠 있다.** `fixtures.ts`가 `localStorage.clear()`로 지워서
+  spec 쪽에선 보이지 않던 것이다. MCP에는 그 픽스처가 없으니 그대로 나온다.
+- **`alert [ref=e70]`** — Next의 라우트 어나운서(route announcer)다. 화면을 옮기면
+  여기에 `운동`, `운동 기록` 같은 페이지 제목이 들어간다.
+  `getByRole("alert")`나 넓은 `getByText`를 쓰면 여기 걸릴 수 있다.
+- **`button "Open Next.js Dev Tools"`** — 6절(4)의 `<nextjs-portal>`이다. 아래 (9) 참고.
+
+### (3) 종목 추가 시트는 274줄짜리 트리다
+
+시트를 열었더니 스냅샷 파일이 274줄이 됐다. 프리셋 44개가 전부 들어 있기 때문이다
+(`grep -c`로 세어보니 정확히 44). 행 하나의 구조:
+
+```yaml
+- listitem [ref=e134]:
+  - button "벤치프레스 가슴 · 바벨 · 휴식 180초" [ref=e135]:
+    - generic [ref=e137]:
+      - generic [ref=e138]: 벤치프레스
+      - generic [ref=e139]: 가슴 · 바벨 · 휴식 180초
+```
+
+6절(2)가 말하는 것이 그대로 보인다 — 자식 `generic` 둘의 텍스트가 합쳐져
+버튼 하나의 이름이 된다. 그리고 `벤치프레스`로 검색했더니 세 형제가 남는다:
+
+```
+- button "덤벨 벤치프레스 가슴 · 덤벨 · 휴식 150초" [ref=e123]
+- button "벤치프레스 가슴 · 바벨 · 휴식 180초" [ref=e135]
+- button "인클라인 벤치프레스 가슴 · 바벨 · 휴식 180초" [ref=e147]
+```
+
+6절(1)의 함정을 코드를 돌려보기 전에 **눈으로 먼저 확인할 수 있다는 게 핵심이다.**
+strict mode 에러를 세 번 맞고 깨닫는 대신, 스냅샷 한 번이면 된다.
+
+문서에 없던 걸 하나 더 발견했다 — **시트에 `닫기` 버튼이 두 개다:**
+
+```yaml
+- generic [ref=e96]:
+  - button "닫기" [ref=e97]        # 백드롭(overlay)
+  - dialog "종목 추가" [ref=e98]:
+    - generic [ref=e99]:
+      - heading "종목 추가" [level=2] [ref=e100]
+      - button "닫기" [ref=e101]    # 헤더의 X
+```
+
+`page.getByRole("button", { name: "닫기" })`는 strict mode violation이 난다.
+`dialog`로 범위를 좁혀야 한다 — 7절 셀렉터 전략 3번이 여기서도 답이다.
+
+### (4) `ref`는 언제 무효해지는가 — 일부러 두 번 해봤다
+
+이번 실습에서 가장 예상과 달랐던 부분이다.
+
+**실험 1 — 사라진 노드의 ref.** 첫 스냅샷의 `불러오는 중…`(`e7`)은 로드 후 사라졌다:
+
+```
+browser_click(element="첫 스냅샷의 불러오는 중… 노드", target="e7")
+→ Error: Ref e7 not found in the current page snapshot. Try capturing new snapshot.
+```
+
+**실험 2 — 교체된 노드의 ref.** 1세트를 완료하면 `button "1세트 완료" [ref=e444]`가
+`button "2세트 완료" [ref=e453]`로 바뀐다. 같은 자리, 같은 역할, 새 번호다.
+옛 번호로 클릭하면:
+
+```
+browser_click(element="옛 '1세트 완료' 버튼", target="e444")
+→ Error: Ref e444 not found in the current page snapshot. Try capturing new snapshot.
+```
+
+중요한 건 **즉시 실패한다는 점**이다. 엉뚱한 걸 누르거나 30초를 기다리지 않는다.
+메시지도 해야 할 일을 그대로 알려준다 — 새 스냅샷을 찍어라.
+
+**그런데 반대로, ref는 생각보다 오래 산다.** 2절에 "그 스냅샷 시점에만 유효한
+임시 핸들"이라고 적어두었는데, 실측은 달랐다:
+
+| 무슨 일이 있었나 | ref |
+|---|---|
+| 검색어 입력으로 목록을 44개 → 3개로 필터링 | `e135` **그대로** |
+| 휴식 타이머 텍스트가 `3:00` → `2:44`로 바뀜 | `e458` **그대로** |
+| `1세트 완료` → `2세트 완료` (노드 교체) | `e444` → `e453` |
+| 세트 하나 더 기록 (휴식 바 전체 리마운트) | `e455~e461` → `e478~e484` |
+| `/session/…` → `/` 라우트 이동 | 홈 화면 전체가 새 번호 (`e488+`) |
+
+즉 **ref는 스냅샷이 아니라 DOM 노드에 매달려 있다.**
+React가 리렌더만 했으면 살아있고, 노드를 지우고 다시 만들었으면 죽는다.
+그래도 어느 쪽인지 예측하려 들 이유가 없으니, 그냥 매번 새로 받는 게 맞다.
+
+한 가지 더: **페이지를 다시 로드하고 나니 ref 형식 자체가 `e39`에서 `f1e39`로 바뀌었다.**
+프레임 접두사다. ref 문자열을 손으로 조립하거나 규칙을 가정하면 안 된다는 뜻이다.
+
+### (5) `browser_handle_dialog` — 문서를 고쳐야 했다
+
+6절(3)에 "스냅샷이 멈춘 것처럼 보이면 다이얼로그가 떠 있는 것"이라고 썼는데,
+**틀렸다.** MCP는 전혀 조용하지 않다. `종료`를 누르자마자:
+
+```
+### Modal state
+- ["confirm" dialog with message "운동을 종료할까요?"]: can be handled by browser_handle_dialog
+```
+
+그리고 다이얼로그를 치우기 전까지 **다른 도구가 전부 막힌다.**
+그냥 스냅샷을 찍어보면:
+
+```
+Error: Tool "browser_snapshot" does not handle the modal state.
+### Modal state
+- ["confirm" dialog with message "운동을 종료할까요?"]: can be handled by browser_handle_dialog
+```
+
+이건 `@playwright/test`와 **정반대 설계**다:
+
+| | `@playwright/test` | Playwright MCP |
+|---|---|---|
+| 핸들러가 없을 때 | 조용히 **dismiss**, 테스트만 이유 없이 실패 | **마무리할 때까지 멈춰 서서 명시적으로 알림** |
+| 고치는 법 | `page.on("dialog", d => d.accept())`를 **미리** 걸어두기 | `browser_handle_dialog(accept=true)`를 **나중에** 부르기 |
+
+정리하면: **다이얼로그에 관한 한 MCP가 훨씬 친절하다.**
+spec에서는 미리 알고 핸들러를 걸지 않으면 조용히 지나가지만, MCP는 모를 수가 없다.
+오히려 **MCP로 먼저 몰아보면 "여기 confirm이 있다"를 공짜로 알게 된다.**
+그 다음에 `fixtures.ts`의 `dialogs` 픽스처를 쓰면 된다.
+
+`accept=true` 후에는 그냥 홈으로 넘어갔고, 최근 기록에 쌓였다:
+
+```yaml
+- link "9월 16일 (수) 벤치프레스 2세트 · 2분 · 1,320kg" [ref=e505] [cursor=pointer]:
+    - /url: /session/bd7d218d-df45-4762-b090-f7b01766f9c6
+```
+
+### (6) 콘솔은 깨끗했다
+
+전체 플로우를 돌린 뒤 `browser_console_messages(all=true)`:
+
+```
+Total messages: 2 (Errors: 0, Warnings: 0)
+
+[INFO] %cDownload the React DevTools for a better development experience: …
+[LOG] [HMR] connected
+```
+
+둘 다 Next dev 서버가 내는 소음이다. 앞에 붙는 `[    256ms]` 같은
+상대 타임스탬프가 있어서 "어느 동작 뒤에 찍혔는지"를 맞추기 좋다.
+
+안 나온 것도 의미가 있다: **hydration mismatch 경고가 없고, 서비스워커 등록 로그도 없다.**
+나중에 페이지를 새로고침했을 때만 폰트 preload 경고 둘이 붙었는데, 무해하다:
+
+```
+[WARNING] The resource ….woff2 was preloaded using link preload but not used
+          within a few seconds from the window's load event.
+```
+
+### (7) `browser_generate_locator` vs 손으로 쓴 것
+
+실습의 하이라이트. 주요 요소에 대해 도구가 내놓은 로케이터를
+[e2e/session.spec.ts](../e2e/session.spec.ts)와 나란히 놓으면 이렇다.
+
+| 요소 | `browser_generate_locator` | 손으로 쓴 것 | 판정 |
+|---|---|---|---|
+| 종목 추가 시트 | `getByRole('dialog', { name: '종목 추가' })` | 같음 | — |
+| 휴식 −30초 | `getByRole('button', { name: '−30초' })` | 같음 | — |
+| 운동 시작 | `getByRole('button', { name: '운동 시작' })` | 같음 | — |
+| 종료(헤더) | `getByRole('button', { name: '종료', exact: true })` | 같음 | **도구가 알아서 `exact`를 붙였다** |
+| 종목 검색 | `getByRole('searchbox', { name: '종목 검색' })` | `getByPlaceholder("종목 검색")` | 도구 쪽이 약간 낫다 |
+| 벤치프레스 행 | `getByRole('button', { name: '벤치프레스 가슴 · 바벨 · 휴식 180초', exact: true })` | `getByRole("button", { name: /^벤치프레스 / })` | **손으로 쓴 쪽이 낫다** |
+| 세트 완료 | `getByRole('button', { name: '세트 완료' })` | `getByRole("button", { name: "1세트 완료" })` | **도구 쪽이 낫다** |
+| 무게 입력 칸 | `getByRole('textbox').first()` | (안 쓰고 ± 버튼을 썼다) | **둘 다 나쁘다** |
+| 최근 기록 링크 | `getByRole('link', { name: '월 16일 (수) 벤치프레스 2세트 · 2분 · 1,320kg' })` | (없음) | **도구가 이상하다** |
+
+하나씩 보면:
+
+**도구가 이긴 자리 — `세트 완료`.**
+내가 쓴 `name: "1세트 완료"`는 세트 번호가 바뀔 때마다 문자열을 고쳐써야 한다.
+도구는 앞의 숫자를 떼고 `'세트 완료'`만 남겨서, 1세트든 5세트든 그대로 잡힌다.
+`getByRole`의 name이 기본적으로 부분 일치라는 성질을 **함정이 아니라 도구로** 쓴 예다.
+6절(1)이 "부분 일치는 위험하다"만 말하고 있었는데, 반대쪽 쓸모도 있었던 것이다.
+
+**내가 이긴 자리 — 벤치프레스 행.**
+도구는 부제를 통째로 적고 `exact: true`를 붙였다. 동작은 하지만
+**프리셋의 기본 휴식 시간을 180초에서 바꾸는 순간 깨진다.**
+내 `/^벤치프레스 /`는 변하지 않는 부분만 고정하고 형제들과도 안 섞인다.
+도구는 **지금 DOM에서 유일한가**만 보지, **내일도 유효할까**는 보지 않는다.
+
+**도구가 아예 이상한 자리 — 최근 기록 링크.**
+`'월 16일 (수) …'` — 앞의 `9`를 일부러 떨궈 놓았다. 이유는 모르겠고,
+어차피 날짜가 들어간 문자열이라 스펙에 그대로 옮길 수 없다.
+**도구 출력은 초안이지 정답이 아니다.**
+
+**둘 다 나쁜 자리 — `Stepper`의 숫자 칸.**
+`getByRole('textbox').first()`. 1절과 7절에서 "접근성 이름이 없다"고 쓴 것의
+가장 직접적인 증거다. 도구도 더 나은 걸 못 만들어서 `.first()`로 도망쳤다.
+순서 하나 바뀌면 그대로 깨진다. **7절의 `aria-label` 권장이 그냥 이론이 아니라는 뿌리다.**
+
+하나 더. **도구를 따로 부르지 않아도 로케이터가 공짜로 나온다.**
+모든 동작 도구가 자기가 실행한 Playwright 코드를 돌려준다:
+
+```
+### Ran Playwright code
+await page.getByRole('button', { name: '종료', exact: true }).click();
+```
+
+이것만 모아도 spec 초안이 된다. 3절의 "MCP는 손, spec은 기억"이 이런 모양이다.
+
+그리고 사소하지만 유용한 것 하나 — 6절(8)의 **눈에 안 보이는 문자** 문제가
+여기서 저절로 해결된다. `'−30초'`의 첫 글자를 코드포인트로 찍어보면 `0x2212`다.
+추측해서 입력하지 말고 **도구 출력을 복사해서 붙여넣으면 된다.**
+
+### (8) 보너스 — IndexedDB를 지우고 프리셋이 다시 심기는 것 보기
+
+먼저 지우기 전 상태를 `browser_evaluate`로 확인했다:
+
+```json
+{
+  "databases": [
+    { "name": "__next_debug_channel", "version": 1 },
+    { "name": "workout-log", "version": 30 }
+  ],
+  "stores": ["exercises", "restTimer", "sessionExercises", "sessions", "setLogs", "settings"],
+  "counts": { "exercises": 44, "restTimer": 0, "sessionExercises": 1,
+              "sessions": 1, "setLogs": 2, "settings": 1 }
+}
+```
+
+방금 기록한 세션 1개와 세트 2개가 그대로 들어 있다.
+(곁다리로 `__next_debug_channel`은 Next 16 dev가 만드는 것이다. 우리 건 아니다.)
+
+**그러고 나서 문서가 틀렸다는 걸 알았다.**
+5절에 "`goto` 후에 지우려 하면 Dexie가 이미 커넥션을 잡고 있어 삭제가 `blocked` 된다"고
+썼는데, 앱이 띄워진 상태에서 `onblocked`를 달고 지워봤더니:
+
+```json
+{ "blocked": false, "log": ["success"] }
+```
+
+거기에 콘솔 경고가 하나 찍혔는데, 이게 이유를 그대로 말해준다:
+
+```
+[WARNING] Another connection wants to delete database 'workout-log'.
+          Closing db now to resume the delete request.
+```
+
+**Dexie가 `versionchange` 이벤트를 듣고 자기 커넥션을 스스로 닫아준다.**
+그래서 막히기는커녕 즉시 지워졌고, `indexedDB.databases()`에서도 바로 사라졌다.
+5절 본문은 고쳐두었다 — `addInitScript`를 써야 하는 진짜 이유는 따로 있다.
+
+이제 `browser_navigate`로 새로고침하고 다시 세어보면:
+
+```json
+{
+  "version": 30,
+  "exercises": 44,
+  "sessions": 0,
+  "setLogs": 0,
+  "first5": ["티바로우", "레그 익스텐션", "덤벨 숄더프레스", "아놀드 프레스", "행잉 레그레이즈"]
+}
+```
+
+스토어 6개가 다시 생기고, 버전은 그대로 30, **프리셋 44개가 돌아왔고**,
+기록은 0이다. Dexie의 `populate` 훅이 제대로 돌았다는 뜻이다.
+(`first5`가 카테고리 순서가 아닌 것은 `getAll()`이 기본 인덱스 순서로 주기 때문이다.)
+
+화면으로도 확인했다. 하단 네비의 `종목` 탭을 누르니 헤더가 그냥 이렇게 말해준다:
+
+```yaml
+- banner [ref=f1e71]:
+  - generic [ref=f1e72]:
+    - heading "종목" [level=1] [ref=f1e73]
+    - paragraph [ref=f1e74]: 44개
+```
+
+### (9) 재현되지 않은 것 — `<nextjs-portal>` 클릭 가로채기
+
+6절(4)에 412px 폭에서 `<nextjs-portal>`이 하단 네비를 덮어 클릭을 가로채고
+30초를 버티다 죽었다고 적혀 있다. 그러나 **이번 실습에선 재현되지 않았다.**
+같은 412×915에서 `종목` 탭을 바로 눌렀고 그냥 이동했다. MCP 쪽에는
+`fixtures.ts`의 `nextjs-portal{display:none}` 같은 장치가 없는데도 그랬다.
+
+스냅샷에는 `button "Open Next.js Dev Tools" [ref=e66]`로 잔존한다.
+Next 16.3.4에서 오버레이 위치가 바뀐 것으로 보인다.
+픽스처의 방어를 걷어낼 이유는 없다 — 공짜고, 버전이 올라가면 다시 걸릴 수 있다.
+다만 **그 항목은 "이 버전에선 항상 그렇다"가 아니라는 것을 알고 읽어야 한다.**
+
+### (10) 덤으로 — spec의 휴식 타이머 단언은 사실 위태롭다
+
+손으로 몰면서만 보이는 것이 있었다. 휴식 바를 관찰한 순서는 이렇다:
+
+```
+1세트 완료 직후        →  3:00
+6초 기다린 뒤          →  2:44   (실제 벽시계대로 준다)
+−30초 버튼 클릭 뒤     →  2:02
+```
+
+`session.spec.ts`는 `3:00`을 단언하고 `−30초`를 누른 뒤 `2:30`을 단언한다.
+지금 통과하는 이유는 단지 **두 줄이 1초 안에 끝나기 때문**이다.
+CI가 느리거나 경계를 스치면 `2:29`가 나와서 깨진다. 잠재적인 flake다.
+
+게다가 `session.spec.ts` 머릿말 주석에는 "가짜 시계까지 등장한다"고 적혀 있는데
+`e2e/` 어디에도 `page.clock` 같은 건 없다. 주석은 고쳐두었다.
+제대로 고치려면 [`page.clock`](https://playwright.dev/docs/clock)을 도입해
+시간을 고정하는 게 맞고, 그건 다음 숙제다.
+
+### (11) 정리 — 예상과 달랐던 것
+
+| 예상 | 실제 |
+|---|---|
+| 스냅샷은 항상 대화에 YAML로 온다 | 동작 도구의 스냅샷은 `.playwright-mcp/`에 파일로 떨어진다 |
+| 인자 이름은 `ref` | `target`이다 (ref 문자열 또는 CSS 셀렉터) |
+| ref는 스냅샷마다 무효해진다 | DOM 노드가 살아있으면 유지된다 |
+| 다이얼로그가 뜨면 흐름이 멈춰 보인다 | `Modal state`로 명시하고 다른 도구를 모두 막는다 |
+| 앱이 뜬 상태에서 `deleteDatabase`는 `blocked` | Dexie가 양보해서 그냥 성공한다 |
+| `<nextjs-portal>`이 클릭을 가로챈다 | 이 버전에선 안 그렇다 |
+| 손으로 쓴 로케이터가 더 낫다 | 절반만. `세트 완료`는 도구가 이겼다 |
+
+가장 큰 수확은 따로 있다. **MCP로 한 번 몰아보면 6절의 함정 절반은 애초에 안 밟는다.**
+벤치프레스 세 형제도, `닫기` 버튼 두 개도, `종료`/`휴식 종료` 충돌도
+스냅샷과 `browser_generate_locator`가 먼저 알려준다.
+strict mode 에러를 세 번 맞아가며 배우는 것도 방법이지만, 더 싼 길이 있었다.
+
+---
+
+## 5. 이 프로젝트의 테스트 구조
 
 ```
 playwright.config.ts   설정 (뷰포트·타임존·서비스워커·dev 서버)
@@ -201,7 +624,12 @@ await page.addInitScript(() => {
 세 가지가 들어 있다:
 
 - **`addInitScript`를 쓰는 이유** — 페이지 스크립트보다 먼저 실행된다.
-  `goto` 후에 지우려 하면 Dexie가 이미 커넥션을 잡고 있어 삭제가 `blocked` 된다.
+  `goto` 후에 지우면 **앱이 이미 읽어버린 뒤**라, 화면은 사라진 데이터를 들고 있고
+  Dexie는 빈 DB를 다시 시딩하는 경주가 된다. 시작점을 보장하려면 로드 전이어야 한다.
+
+  > 예전에 여기에 "Dexie가 커넥션을 잡고 있어 삭제가 `blocked` 된다"고 썼었는데 **틀렸다.**
+  > 4절(8)에서 직접 확인했다 — Dexie는 `versionchange`를 듣고 자기 커넥션을 스스로 닫아서,
+  > 앱이 띄워진 상태에서도 `deleteDatabase`는 `blocked` 없이 그냥 성공한다.
 - **`await`이 없어도 되는 이유** — IndexedDB는 DB 이름마다 요청을 순서대로 처리한다.
   `deleteDatabase`가 먼저 큐에 들어갔으므로, 뒤이어 실행될 Dexie의 `open`은 삭제가 끝난 뒤에 열린다.
 - **`sessionStorage` 가드가 필요한 이유** — `addInitScript`는 **모든 내비게이션마다** 다시 돈다.
@@ -225,7 +653,7 @@ await page.goto("/stats");               // 다시 읽기 (필수!)
 
 ---
 
-## 5. 이 앱에서 실제로 밟은 지뢰들
+## 6. 이 앱에서 실제로 밟은 지뢰들
 
 전부 테스트를 쓰면서 실제로 겪은 것이고, 코드에 주석으로도 남겨두었다.
 
@@ -266,14 +694,20 @@ page.on("dialog", (d) => { seen.push(d.message()); d.accept(); });
 fixtures의 `dialogs` 픽스처가 이걸 자동으로 해주면서 메시지를 배열에 모아둔다.
 그래서 테스트에서 `expect(dialogs).toContain("운동을 종료할까요?")` 로 확인할 수 있다.
 
-MCP 쪽 짝은 `browser_handle_dialog`다. "종료"를 누른 뒤 스냅샷이 멈춘 것처럼 보이면
-다이얼로그가 떠 있는 것이니, 이 도구로 수락(`accept: true`)해 주면 흐름이 이어진다.
+MCP 쪽 짝은 `browser_handle_dialog`다. 다만 **MCP는 이 대목에서 반대로 행동한다** —
+조용히 dismiss 하는 게 아니라 `Modal state`를 명시하고, 수락/취소할 때까지
+다른 도구를 전부 거부한다. 실제 출력과 비교는 4절(5)에 있다.
+그래서 **MCP로 먼저 몰아보면 "여기 confirm이 있다"를 공짜로 알게 된다.**
 
 ### (4) `next dev`의 개발 오버레이가 클릭을 가로챈다
 
 412px 폭에서 `<nextjs-portal>`이 하단 네비게이션 위에 겹쳐서
 `"<nextjs-portal> intercepts pointer events"` 로 30초를 버티다 죽었다.
 앱 설정을 고치는 대신 테스트에서만 CSS로 숨겼다 (프로덕션 빌드에는 없는 요소다).
+
+> 단, **Next 16.3.4 + MCP 실습에선 재현되지 않았다** (4절(9)).
+> 오버레이 위치가 바뀐 것으로 보인다. 픽스처의 방어는 공짜니 그대로 두지만,
+> "항상 그런다"로 읽으면 안 된다.
 
 ### (5) 버전 없는 `indexedDB.open()`이 프리셋을 날린다
 
@@ -323,7 +757,7 @@ seed 헬퍼를 처음 썼을 때 `"One of the specified object stores was not fo
 
 ---
 
-## 6. 셀렉터 전략
+## 7. 셀렉터 전략
 
 이 앱에는 `data-testid`가 **하나도 없다.** 그래도 대부분 잡힌다. 튼튼한 순서대로:
 
@@ -354,7 +788,7 @@ seed 헬퍼를 처음 썼을 때 `"One of the specified object stores was not fo
 
 ---
 
-## 7. 부록 — 다음 단계: Playwright Agents
+## 8. 부록 — 다음 단계: Playwright Agents
 
 Playwright는 공식 에이전트 정의 3종을 제공한다.
 
