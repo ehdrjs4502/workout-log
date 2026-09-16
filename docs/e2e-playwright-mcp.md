@@ -75,20 +75,44 @@ MCP(Model Context Protocol)는 AI 에이전트가 외부 도구를 쓰기 위한
 
 ## 2. 도구 카탈로그
 
+아래는 블로그 요약이 아니라 **이 프로젝트 설정으로 서버를 띄워 `tools/list`를 직접 받아본 결과**다
+(`@playwright/mcp@0.0.81`, Playwright 1.64.0-alpha).
+기본 26개 + `--caps=testing`이 더해주는 5개 = **31개**.
+
 | 분류 | 도구 | 쓰는 때 |
 |---|---|---|
 | 이동 | `browser_navigate`, `browser_navigate_back`, `browser_tabs` | URL 열기, 뒤로, 탭 전환 |
+| | `browser_close`, `browser_resize` | 닫기, 뷰포트 크기 변경 |
 | 관찰 | `browser_snapshot` | **가장 많이 쓴다.** 현재 화면의 접근성 트리 |
+| | `browser_find` | 큰 페이지에서 텍스트/정규식으로 요소 찾기 |
 | | `browser_take_screenshot` | 눈으로 봐야 할 때만 (레이아웃 깨짐 등) |
-| | `browser_find` | 큰 페이지에서 요소 찾기 |
 | 조작 | `browser_click`, `browser_type`, `browser_fill_form`, `browser_select_option` | ref를 받아 동작 |
-| | `browser_press_key`, `browser_hover`, `browser_drag` | |
-| 대기 | `browser_wait_for` | 텍스트가 나타나거나 사라질 때까지 |
+| | `browser_press_key`, `browser_hover`, `browser_drag`, `browser_drop` | |
+| | `browser_file_upload` | 파일 선택 (설정의 '가져오기' 같은 흐름) |
+| 다이얼로그 | `browser_handle_dialog` | **이 앱에 꼭 필요하다.** 네이티브 `confirm`/`alert` 수락·취소 |
+| 대기 | `browser_wait_for` | 텍스트가 나타나거나 사라질 때까지, 또는 정해진 시간 |
 | 실행 | `browser_evaluate` | 페이지 안에서 JS 실행 — **이 앱에선 IndexedDB 조작에 쓴다** |
-| 진단 | `browser_console_messages`, `browser_network_requests` | 콘솔 에러, 요청 목록 |
-| 저장소 | `browser_localstorage_set`, `browser_cookie_set`, `browser_storage_state` | 로그인 상태 재현 등 |
-| 테스트(`--caps=testing`) | `browser_verify_element_visible`, `browser_verify_text_visible` | 단언을 도구로 표현 |
-| | `browser_generate_locator` | **MCP → spec 코드 변환의 핵심.** 요소의 권장 로케이터를 뽑는다 |
+| | `browser_run_code_unsafe` | Playwright 코드 조각을 통째로 실행 (이름 그대로 위험) |
+| 진단 | `browser_console_messages` | 콘솔 메시지 전부 |
+| | `browser_network_requests`, `browser_network_request` | 요청 목록 / 한 건의 헤더·본문 |
+| 페이지 도구 | `browser_webmcp_list`, `browser_webmcp_call` | 페이지가 직접 등록한 WebMCP 도구 (이 앱은 안 쓴다) |
+| **`--caps=testing`** | `browser_generate_locator` | **MCP → spec 코드 변환의 핵심.** 요소의 권장 로케이터를 뽑는다 |
+| | `browser_verify_element_visible`, `browser_verify_text_visible` | 단언을 도구로 표현 |
+| | `browser_verify_list_visible`, `browser_verify_value` | 목록/입력값 단언 |
+
+직접 확인한 것 두 가지:
+
+- **스토리지 전용 도구는 없다.** `browser_localstorage_set` / `browser_cookie_set` /
+  `browser_storage_state` 같은 이름을 소개하는 글이 많지만 이 버전에는 존재하지 않는다.
+  쿠키·localStorage·IndexedDB는 전부 `browser_evaluate`로 다룬다.
+- `--caps=vision,pdf,devtools`를 켜면 20개가 더 붙는다 — 좌표 기반 마우스
+  (`browser_mouse_click_xy` 등), `browser_pdf_save`, 트레이싱·녹화
+  (`browser_start_tracing`, `browser_start_video`, `browser_highlight` …).
+  접근성 트리로 충분한 이 앱에서는 좌표 도구가 오히려 테스트를 깨지기 쉽게 만든다.
+
+> 설정을 바꿨을 때 도구 목록이 실제로 어떻게 변하는지는 서버에 직접 물어보면 된다.
+> `npx @playwright/mcp@latest --isolated --caps=testing` 를 stdio로 띄우고
+> `initialize` → `tools/list` JSON-RPC 두 줄을 보내면 위 표가 그대로 나온다.
 
 ### 한 턴의 실제 흐름
 
@@ -241,6 +265,9 @@ page.on("dialog", (d) => { seen.push(d.message()); d.accept(); });
 
 fixtures의 `dialogs` 픽스처가 이걸 자동으로 해주면서 메시지를 배열에 모아둔다.
 그래서 테스트에서 `expect(dialogs).toContain("운동을 종료할까요?")` 로 확인할 수 있다.
+
+MCP 쪽 짝은 `browser_handle_dialog`다. "종료"를 누른 뒤 스냅샷이 멈춘 것처럼 보이면
+다이얼로그가 떠 있는 것이니, 이 도구로 수락(`accept: true`)해 주면 흐름이 이어진다.
 
 ### (4) `next dev`의 개발 오버레이가 클릭을 가로챈다
 
