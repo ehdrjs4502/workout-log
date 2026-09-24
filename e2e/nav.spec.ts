@@ -69,3 +69,37 @@ test("첫 실행이면 기록이 비어 있고 프리셋 종목은 채워져 있
     page.getByRole("button", { name: "벤치프레스 수정", exact: true }),
   ).toBeVisible();
 });
+
+/**
+ * 회귀: /settings/export 가 렌더 중에 navigator.share 를 직접 읽어서
+ * 서버 HTML(공유 버튼 없음)과 클라이언트(있음)가 어긋나 하이드레이션 에러가 났다.
+ * 탭 이동(클라이언트 내비게이션)으로는 안 보이고, 주소로 바로 열거나 새로고침할 때만 드러난다.
+ * 그래서 모든 경로를 goto 로 직접 연다.
+ *
+ * 함정: 헤드리스 Chromium 에는 navigator.share 가 없어서 서버와 클라이언트가 우연히 일치한다.
+ * 그대로 두면 이 테스트는 버그가 있어도 통과한다. 폰처럼 share 를 심어 둔다.
+ */
+test("어느 화면을 바로 열어도 런타임 에러가 없다", async ({ page }) => {
+  await page.addInitScript(() => {
+    if (!navigator.share) {
+      Object.defineProperty(navigator, "share", { value: async () => {}, configurable: true });
+    }
+  });
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(`${page.url()} :: ${e.message.split("\n")[0]}`));
+
+  const paths = [...TABS.map((t) => t.path), "/settings/export"];
+  for (const path of paths) {
+    await page.goto(path);
+    await expect(page.getByRole("navigation")).toBeVisible();
+  }
+
+  // 세션 화면도 (하단 네비게이션이 없는 화면)
+  await page.goto("/");
+  await page.getByRole("button", { name: "운동 시작" }).click();
+  await expect(page).toHaveURL(/\/session\//);
+  await page.reload();
+  await expect(page.getByText("진행 중")).toBeVisible();
+
+  expect(errors).toEqual([]);
+});

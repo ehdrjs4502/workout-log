@@ -9,6 +9,7 @@ import { listSessionsBetween, loadSessions } from "@/lib/db/repo";
 import { sessionsToText, type ExportMode } from "@/lib/export/toText";
 import { copyText } from "@/lib/export/clipboard";
 import { toDateKey, todayKey } from "@/lib/format/date";
+import { useIsClient } from "@/lib/hooks/useIsClient";
 
 type RangeKey = "today" | "d7" | "month" | "d30" | "custom";
 
@@ -73,8 +74,10 @@ export default function ExportPage() {
     window.setTimeout(() => setCopied(false), 1800);
   };
 
-  const canShare =
-    typeof navigator !== "undefined" && typeof navigator.share === "function";
+  // 서버 렌더엔 navigator 가 없어서 렌더 중에 바로 읽으면 서버(버튼 없음)와
+  // 클라이언트(버튼 있음)의 HTML 이 어긋난다. 하이드레이션이 끝난 뒤에만 본다.
+  const isClient = useIsClient();
+  const canShare = isClient && typeof navigator.share === "function";
 
   return (
     <>
