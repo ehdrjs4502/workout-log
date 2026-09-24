@@ -140,7 +140,7 @@ test("백업을 합치면 기존 기록에 더해진다", async ({ page, dialogs
   await expect(page.getByText("45개")).toBeVisible();
   await expect(
     page.getByRole("button", {
-      name: "가져오기 테스트 종목 가슴 · 바벨 · 휴식 120초",
+      name: "가져오기 테스트 종목 가슴 · 휴식 120초",
       exact: true,
     }),
   ).toBeVisible();
@@ -183,13 +183,13 @@ test("전체 교체를 고르면 기존 기록이 사라진다", async ({ page }
   // 이 함정은 이 프로젝트에서 계속 나온다 — 종목 행은 항상 전체 이름 + exact 로 잡을 것.
   await expect(
     page.getByRole("button", {
-      name: "가져오기 테스트 종목 가슴 · 바벨 · 휴식 120초",
+      name: "가져오기 테스트 종목 가슴 · 휴식 120초",
       exact: true,
     }),
   ).toBeVisible();
   await expect(
     page.getByRole("button", {
-      name: "벤치프레스 가슴 · 바벨 · 휴식 180초",
+      name: "벤치프레스 가슴 · 휴식 180초",
       exact: true,
     }),
   ).toBeHidden();

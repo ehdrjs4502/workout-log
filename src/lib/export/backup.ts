@@ -1,14 +1,15 @@
 import { db } from "@/lib/db";
 import { inferEquipment, isPresetBodyWeight } from "@/lib/db/presets";
-import type {
-  Exercise,
-  Session,
-  SessionExercise,
-  SetLog,
-  Settings,
+import {
+  NO_EQUIPMENT,
+  type Exercise,
+  type Session,
+  type SessionExercise,
+  type SetLog,
+  type Settings,
 } from "@/lib/db/schema";
 
-export const BACKUP_VERSION = 3;
+export const BACKUP_VERSION = 4;
 
 export type Backup = {
   version: number;
@@ -63,9 +64,15 @@ type V1Backup = Omit<V2Backup, "version" | "exercises" | "setLogs" | "settings">
 };
 
 /** v2 에는 기구 종류가 없었다 */
-type V2Backup = Omit<Backup, "version" | "exercises"> & {
+type V2Backup = Omit<V3Backup, "version" | "exercises"> & {
   version: 2;
   exercises: Omit<Exercise, "equipment">[];
+};
+
+/** v3 에는 기구가 종목에만 있었다 */
+type V3Backup = Omit<Backup, "version" | "sessionExercises"> & {
+  version: 3;
+  sessionExercises: Omit<SessionExercise, "equipment">[];
 };
 
 function v1ToV2(v1: V1Backup): V2Backup {
@@ -83,11 +90,24 @@ function v1ToV2(v1: V1Backup): V2Backup {
   };
 }
 
-function v2ToV3(v2: V2Backup): Backup {
+function v2ToV3(v2: V2Backup): V3Backup {
   return {
     ...v2,
     version: 3,
     exercises: v2.exercises.map((e) => ({ ...e, equipment: inferEquipment(e.name) })),
+  };
+}
+
+/** 그때 종목에 붙어 있던 기구가 곧 그날의 기구였다 (DB v4 마이그레이션과 같은 규칙) */
+function v3ToV4(v3: V3Backup): Backup {
+  const byId = new Map(v3.exercises.map((e) => [e.id, e.equipment]));
+  return {
+    ...v3,
+    version: 4,
+    sessionExercises: v3.sessionExercises.map((l) => ({
+      ...l,
+      equipment: byId.get(l.exerciseId) ?? NO_EQUIPMENT,
+    })),
   };
 }
 
@@ -99,10 +119,11 @@ function v2ToV3(v2: V2Backup): Backup {
  * 버전이 하나 늘 때마다 분기가 배로 늘어난다.
  */
 function normalizeBackup(backup: Backup): Backup {
-  let data: V1Backup | V2Backup | Backup = backup;
+  let data: V1Backup | V2Backup | V3Backup | Backup = backup;
 
   if (data.version === 1) data = v1ToV2(data as V1Backup);
   if (data.version === 2) data = v2ToV3(data as V2Backup);
+  if (data.version === 3) data = v3ToV4(data as V3Backup);
 
   if (data.version !== BACKUP_VERSION) {
     throw new Error(

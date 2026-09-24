@@ -1,5 +1,5 @@
 import type { HydratedSession, HydratedSessionExercise } from "@/lib/db/repo";
-import { EQUIPMENT_LABEL } from "@/lib/db/schema";
+import { equipmentLabel, NO_EQUIPMENT } from "@/lib/db/schema";
 import {
   formatClock,
   formatDateFullKo,
@@ -17,14 +17,15 @@ export type ExportMode = "simple" | "detailed";
 /**
  * "랫풀다운 (머신)" — 이름만으로는 뭘로 들었는지 알 수 없는 종목이 많다.
  * 머신이냐 프리웨이트냐에 따라 평가가 갈리니 붙여준다.
- * '기타' 는 알려주는 게 없으므로 적지 않는다 (맨몸 여부는 머리말의 체중이 말한다).
+ * 직접 적은 기구도 그 이름 그대로 붙는다 ("스윙 (케틀벨)").
+ * '없음' 은 적지 않는다 (맨몸 여부는 머리말의 체중이 말한다).
  */
 function nameOf(item: HydratedSessionExercise): string {
   const exercise = item.exercise;
   if (!exercise) return "알 수 없는 종목";
-  return exercise.equipment === "etc"
+  return item.equipment === NO_EQUIPMENT
     ? exercise.name
-    : `${exercise.name} (${EQUIPMENT_LABEL[exercise.equipment]})`;
+    : `${exercise.name} (${equipmentLabel(item.equipment)})`;
 }
 
 function header(session: HydratedSession) {

@@ -29,16 +29,30 @@ export const BODY_PART_COLOR = Object.fromEntries(
 ) as Record<BodyPart, string>;
 
 /**
- * 기구 종류. 표시와 입력 단위에만 쓴다 — 볼륨 계산식(stats/volume.ts)은 이 값을 보지 않는다.
+ * 기구 종류. 종목이 아니라 '그날 그 종목을 무엇으로 했는가'의 속성이다 — 같은 벤치프레스를
+ * 바벨로도 덤벨로도 하니까. 그래서 세션에 종목을 넣을 때 고르고 SessionExercise 에 남긴다.
+ *
+ * 표시와 입력 단위에만 쓴다 — 볼륨 계산식(stats/volume.ts)은 이 값을 보지 않는다.
  * 그래야 장비를 나중에 고쳐도 지난 기록의 수치가 흔들리지 않는다.
  *
- * '맨몸' 이 없는 건 usesBodyWeight 가 이미 그 질문("볼륨에 몸무게를 더하나")에 답하기 때문이다.
+ * 값은 세 가지 중 하나다.
+ *  - 프리셋 키 ('barbell' 등)
+ *  - NO_EQUIPMENT ('etc') — 기구 없음. 플랭크·풀업처럼 몸만 쓰는 종목.
+ *    키 이름이 'etc' 인 건 예전 '기타' 를 그대로 물려받아서다 (마이그레이션 없이 옛 기록이 '없음' 이 된다)
+ *  - 그 밖의 문자열 — 사용자가 직접 적은 기구 이름 ('케틀벨', '스미스머신' …). 그대로 보여준다
+ *
+ * '맨몸' 이 따로 없는 건 usesBodyWeight 가 이미 그 질문("볼륨에 몸무게를 더하나")에 답하기 때문이다.
  * 풀업은 equipment: 'etc' + usesBodyWeight: true 로 표현된다.
  */
-export type Equipment = "barbell" | "dumbbell" | "machine" | "cable" | "etc";
+export type PresetEquipment = "barbell" | "dumbbell" | "machine" | "cable";
 
-export const EQUIPMENTS: {
-  key: Equipment;
+// (string & {}) 는 자동완성에서 프리셋 키가 사라지지 않게 하는 관용구다
+export type Equipment = PresetEquipment | typeof NO_EQUIPMENT | (string & {});
+
+export const NO_EQUIPMENT = "etc";
+
+export const PRESET_EQUIPMENTS: {
+  key: PresetEquipment;
   label: string;
   /** 무게 Stepper 의 증감폭. 머신·케이블은 웨이트 스택이 보통 5kg 단위다 */
   step: number;
@@ -47,16 +61,33 @@ export const EQUIPMENTS: {
   { key: "dumbbell", label: "덤벨", step: 2.5 },
   { key: "machine", label: "머신", step: 5 },
   { key: "cable", label: "케이블", step: 5 },
-  { key: "etc", label: "기타", step: 2.5 },
 ];
 
-export const EQUIPMENT_LABEL = Object.fromEntries(
-  EQUIPMENTS.map((e) => [e.key, e.label]),
-) as Record<Equipment, string>;
+const presetOf = (e: Equipment) => PRESET_EQUIPMENTS.find((p) => p.key === e);
 
-export const EQUIPMENT_STEP = Object.fromEntries(
-  EQUIPMENTS.map((e) => [e.key, e.step]),
-) as Record<Equipment, number>;
+export const isCustomEquipment = (e: Equipment) =>
+  e !== NO_EQUIPMENT && presetOf(e) === undefined;
+
+export function equipmentLabel(e: Equipment): string {
+  if (e === NO_EQUIPMENT) return "없음";
+  return presetOf(e)?.label ?? e;
+}
+
+/** 직접 적은 기구는 증감폭을 알 수 없으니 가장 흔한 2.5kg 로 둔다 */
+export const equipmentStep = (e: Equipment) => presetOf(e)?.step ?? 2.5;
+
+/**
+ * 직접 입력을 저장할 값으로 바꾼다. '바벨' 이라고 적으면 프리셋 바벨과 같은 것으로 본다 —
+ * 안 그러면 같은 기구가 둘로 갈려 지난 기록을 못 찾는다. 빈 입력은 null.
+ */
+export function normalizeEquipment(input: string): Equipment | null {
+  const text = input.trim().replace(/\s+/g, " ");
+  if (!text) return null;
+  const preset = PRESET_EQUIPMENTS.find((p) => p.label === text || p.key === text);
+  if (preset) return preset.key;
+  if (text === "없음" || text === NO_EQUIPMENT) return NO_EQUIPMENT;
+  return text;
+}
 
 /**
  * 모든 레코드가 공유하는 동기화 메타.
@@ -75,7 +106,10 @@ export type Exercise = SyncMeta & {
   id: string;
   name: string;
   bodyPart: BodyPart;
-  /** 기구 종류. 목록 표시와 무게 입력 단위에만 쓴다 (볼륨 계산에는 영향이 없다) */
+  /**
+   * 마지막으로 고른 기구. 다음에 이 종목을 세션에 넣을 때 기본 선택값으로만 쓴다.
+   * 기록의 정본은 SessionExercise.equipment 다.
+   */
   equipment: Equipment;
   /** 사용자가 직접 추가한 종목인지 (프리셋과 구분) */
   isCustom: boolean;
@@ -97,6 +131,8 @@ export type SessionExercise = SyncMeta & {
   id: string;
   sessionId: string;
   exerciseId: string;
+  /** 이번에 이 종목을 무엇으로 했는지. 무게 입력 단위·지난 기록 조회·내보내기에 쓴다 */
+  equipment: Equipment;
   order: number;
 };
 

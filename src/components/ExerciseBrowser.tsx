@@ -6,7 +6,6 @@ import {
   BODY_PARTS,
   BODY_PART_COLOR,
   BODY_PART_LABEL,
-  EQUIPMENT_LABEL,
   type BodyPart,
   type Exercise,
 } from "@/lib/db/schema";
@@ -118,8 +117,7 @@ export function ExerciseBrowser({
                           {exercise.name}
                         </span>
                         <span className="block truncate text-xs text-muted">
-                          {BODY_PART_LABEL[exercise.bodyPart]} ·{" "}
-                          {EQUIPMENT_LABEL[exercise.equipment]} · 휴식{" "}
+                          {BODY_PART_LABEL[exercise.bodyPart]} · 휴식{" "}
                           {exercise.defaultRestSec}초
                         </span>
                       </span>

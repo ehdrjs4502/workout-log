@@ -2,6 +2,7 @@ import Dexie, { type Table } from "dexie";
 import {
   ALIVE,
   DEFAULT_SETTINGS,
+  NO_EQUIPMENT,
   type Exercise,
   type RestTimerState,
   type Session,
@@ -85,6 +86,21 @@ class WorkoutDB extends Dexie {
           .toCollection()
           .modify((row) => {
             row.equipment = inferEquipment(row.name);
+          });
+      });
+
+    // v4: 기구를 종목이 아니라 세션 안의 종목에 기록한다.
+    // 지난 기록은 그때 종목에 붙어 있던 기구로 채운다 — 그 시절엔 그게 곧 그날의 기구였다.
+    this.version(4)
+      .stores({})
+      .upgrade(async (tx) => {
+        const exercises = await tx.table<Exercise>("exercises").toArray();
+        const byId = new Map(exercises.map((e) => [e.id, e.equipment]));
+        await tx
+          .table<SessionExercise>("sessionExercises")
+          .toCollection()
+          .modify((row) => {
+            row.equipment = byId.get(row.exerciseId) ?? NO_EQUIPMENT;
           });
       });
 

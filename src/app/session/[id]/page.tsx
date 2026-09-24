@@ -160,8 +160,8 @@ export default function SessionPage() {
       <ExercisePickerSheet
         open={pickerOpen}
         onClose={() => setPickerOpen(false)}
-        onPick={async (exerciseId) => {
-          await addExerciseToSession(session.id, exerciseId);
+        onPick={async (exerciseId, equipment) => {
+          await addExerciseToSession(session.id, exerciseId, equipment);
         }}
       />
     </>

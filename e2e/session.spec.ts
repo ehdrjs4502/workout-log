@@ -10,8 +10,12 @@ import { test, expect } from "./fixtures";
  * → docs/e2e-playwright-mcp.md 4절(10)
  */
 
-/** 종목 추가 시트를 열고 이름으로 하나 고른다 */
-async function addExercise(page: import("@playwright/test").Page, name: string) {
+/** 종목 추가 시트를 열고 이름으로 하나 고른 뒤, 기구까지 고른다 */
+async function addExercise(
+  page: import("@playwright/test").Page,
+  name: string,
+  equipment = "바벨",
+) {
   // 주의: 화면의 '종목 추가' 버튼과 시트 제목이 같은 글자다.
   //       시트가 열린 뒤에는 이름만으로 고르면 모호해지므로 dialog 로 범위를 좁힌다.
   await page.getByRole("button", { name: "종목 추가", exact: true }).click();
@@ -20,9 +24,13 @@ async function addExercise(page: import("@playwright/test").Page, name: string) 
   await expect(sheet).toBeVisible();
 
   await sheet.getByPlaceholder("종목 검색").fill(name);
-  // 행 버튼의 접근성 이름은 "벤치프레스 가슴 · 바벨 · 휴식 180초" 처럼 부제까지 포함한다.
+  // 행 버튼의 접근성 이름은 "벤치프레스 가슴 · 휴식 180초" 처럼 부제까지 포함한다.
   // '인클라인 벤치프레스' 같은 형제와 섞이지 않도록 앞머리를 고정한다.
   await sheet.getByRole("button", { name: new RegExp(`^${name} `) }).click();
+
+  // 두 번째 단계: 기구. 지난번 고른 것에는 '지난번' 표시가 붙어 이름이 "바벨 지난번" 이 된다
+  await expect(sheet.getByText("어떤 기구로 하나요?")).toBeVisible();
+  await sheet.getByRole("button", { name: new RegExp(`^${equipment}`) }).click();
 
   await expect(sheet).toBeHidden();
 }
@@ -144,4 +152,60 @@ test("새로고침해도 진행 중인 운동이 이어진다", async ({ page })
   await page.goto("/");
   await expect(page.getByText("진행 중인 운동")).toBeVisible();
   await expect(page.getByRole("button", { name: "이어서 하기" })).toBeVisible();
+});
+
+test("기구는 운동할 때 고르고, 다음번엔 그 기구가 기본값이 된다", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "운동 시작" }).click();
+
+  // 벤치프레스를 덤벨로. 덤벨도 2.5kg 단위다
+  await addExercise(page, "벤치프레스", "덤벨");
+  await expect(page.getByRole("button", { name: "기구 바꾸기 (지금 덤벨)" })).toBeVisible();
+
+  // 잘못 골랐으면 카드에서 바로 바꾼다 — 머신은 5kg 단위라 20 → 25
+  await page.getByRole("button", { name: "기구 바꾸기 (지금 덤벨)" }).click();
+  const choose = page.getByRole("dialog", { name: "벤치프레스 기구" });
+  await choose.getByRole("button", { name: /^머신/ }).click();
+  await expect(choose).toBeHidden();
+  await page.getByRole("button", { name: "무게 증가" }).click();
+  await page.getByRole("button", { name: "1세트 완료" }).click();
+  await expect(page.getByText("25kg × 10")).toBeVisible();
+
+  // 같은 종목을 다시 넣으려 하면 방금 고른 머신이 '지난번' 으로 표시된다
+  await page.getByRole("button", { name: "종목 추가", exact: true }).click();
+  const sheet = page.getByRole("dialog", { name: "종목 추가" });
+  await sheet.getByPlaceholder("종목 검색").fill("벤치프레스");
+  await sheet.getByRole("button", { name: /^벤치프레스 / }).click();
+  await expect(sheet.getByRole("button", { name: "머신 지난번" })).toBeVisible();
+});
+
+test("목록에 없는 기구는 직접 적고, 다음부터는 버튼으로 고른다", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "운동 시작" }).click();
+
+  // 1) 직접 입력: '기타' 대신 이름을 적는다
+  await page.getByRole("button", { name: "종목 추가", exact: true }).click();
+  const sheet = page.getByRole("dialog", { name: "종목 추가" });
+  await sheet.getByPlaceholder("종목 검색").fill("덤벨로우");
+  await sheet.getByRole("button", { name: /^덤벨로우 / }).click();
+  await sheet.getByRole("textbox", { name: "기구 직접 입력" }).fill("케틀벨");
+  await sheet.getByRole("button", { name: "사용" }).click();
+  await expect(sheet).toBeHidden();
+
+  await expect(page.getByRole("button", { name: "기구 바꾸기 (지금 케틀벨)" })).toBeVisible();
+
+  // 2) 다른 종목을 넣을 때도 방금 적은 '케틀벨' 이 선택지로 나온다
+  await page.getByRole("button", { name: "종목 추가", exact: true }).click();
+  await sheet.getByPlaceholder("종목 검색").fill("런지");
+  await sheet.getByRole("button", { name: /^런지 / }).click();
+  await sheet.getByRole("button", { name: "케틀벨", exact: true }).click();
+  await expect(sheet).toBeHidden();
+  await expect(page.getByRole("button", { name: "기구 바꾸기 (지금 케틀벨)" })).toHaveCount(2);
+
+  // 3) 기구가 없는 종목은 '없음' 이 기본으로 잡혀 있다
+  await page.getByRole("button", { name: "종목 추가", exact: true }).click();
+  await sheet.getByPlaceholder("종목 검색").fill("플랭크");
+  await sheet.getByRole("button", { name: /^플랭크 / }).click();
+  await expect(sheet.getByRole("button", { name: "없음 지난번" })).toBeVisible();
+  await expect(sheet.getByRole("button", { name: /^기타/ })).toHaveCount(0);
 });

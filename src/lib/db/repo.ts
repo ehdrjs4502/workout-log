@@ -1,8 +1,11 @@
 import Dexie from "dexie";
 import { db, newId, nowMeta } from "./index";
+import { inferEquipment } from "./presets";
 import { todayKey } from "@/lib/format/date";
 import {
   ALIVE,
+  isCustomEquipment,
+  NO_EQUIPMENT,
   DEFAULT_SETTINGS,
   type BodyPart,
   type Equipment,
@@ -35,17 +38,23 @@ export async function createExercise(input: {
   usesBodyWeight?: boolean;
 }): Promise<string> {
   const id = newId();
+  const name = input.name.trim();
   await db.exercises.add({
     id,
-    name: input.name.trim(),
+    name,
     bodyPart: input.bodyPart,
-    equipment: input.equipment ?? "etc",
+    // 처음 세션에 넣을 때의 기본 선택값일 뿐이다. 이름에 단서가 있으면 그걸 쓴다
+    equipment: input.equipment ?? inferEquipment(name),
     isCustom: true,
     defaultRestSec: input.defaultRestSec ?? 90,
     usesBodyWeight: input.usesBodyWeight ?? false,
     ...nowMeta(),
   });
   return id;
+}
+
+export function getExercise(id: string) {
+  return db.exercises.get(id);
 }
 
 export function updateExercise(id: string, patch: Partial<Omit<Exercise, "id">>) {
@@ -125,21 +134,69 @@ export async function deleteSession(sessionId: string) {
 
 /* ------------------------- 세션 안의 종목 / 세트 ------------------------- */
 
-export async function addExerciseToSession(sessionId: string, exerciseId: string) {
+/**
+ * equipment 를 안 주면 그 종목에서 마지막으로 고른 기구를 쓴다.
+ * 고른 기구는 종목에도 기억해 두어 다음번 기본값이 된다.
+ */
+export async function addExerciseToSession(
+  sessionId: string,
+  exerciseId: string,
+  equipment?: Equipment,
+) {
   const siblings = await db.sessionExercises
     .where("[sessionId+deletedAt]")
     .equals([sessionId, ALIVE])
     .toArray();
+  const chosen = equipment ?? (await db.exercises.get(exerciseId))?.equipment ?? NO_EQUIPMENT;
 
   const id = newId();
-  await db.sessionExercises.add({
-    id,
-    sessionId,
-    exerciseId,
-    order: siblings.length,
-    ...nowMeta(),
+  await db.transaction("rw", db.sessionExercises, db.exercises, async () => {
+    await db.sessionExercises.add({
+      id,
+      sessionId,
+      exerciseId,
+      equipment: chosen,
+      order: siblings.length,
+      ...nowMeta(),
+    });
+    await rememberEquipment(exerciseId, chosen);
   });
   return id;
+}
+
+/** 세션에 넣은 뒤에 기구를 잘못 골랐음을 알았을 때 */
+export async function setSessionExerciseEquipment(
+  sessionExerciseId: string,
+  equipment: Equipment,
+) {
+  await db.transaction("rw", db.sessionExercises, db.exercises, async () => {
+    const link = await db.sessionExercises.get(sessionExerciseId);
+    if (!link) return;
+    await db.sessionExercises.update(sessionExerciseId, { equipment, ...touch() });
+    await rememberEquipment(link.exerciseId, equipment);
+  });
+}
+
+/**
+ * 사용자가 직접 적어 쓴 기구 이름들, 최근에 쓴 것부터.
+ * 한 번 적은 '케틀벨' 을 다음부터는 버튼으로 고를 수 있게 한다.
+ * 세션 종목은 많아야 수천 행이라 인덱스 없이 훑는다.
+ */
+export async function listCustomEquipments(): Promise<Equipment[]> {
+  const links = await db.sessionExercises.where("deletedAt").equals(ALIVE).toArray();
+  const lastUsed = new Map<Equipment, number>();
+  for (const link of links) {
+    if (!isCustomEquipment(link.equipment)) continue;
+    lastUsed.set(link.equipment, Math.max(lastUsed.get(link.equipment) ?? 0, link.updatedAt));
+  }
+  return [...lastUsed].sort((a, b) => b[1] - a[1]).map(([e]) => e);
+}
+
+async function rememberEquipment(exerciseId: string, equipment: Equipment) {
+  const exercise = await db.exercises.get(exerciseId);
+  if (exercise && exercise.equipment !== equipment) {
+    await db.exercises.update(exerciseId, { equipment, ...touch() });
+  }
 }
 
 export async function removeSessionExercise(sessionExerciseId: string) {
@@ -198,11 +255,15 @@ export function deleteSet(id: string) {
 
 /**
  * 해당 종목을 마지막으로 수행했을 때의 마지막 세트.
- * SetLog 에 exerciseId 를 비정규화해둔 덕에 join 없이 인덱스 한 방으로 끝난다.
+ * SetLog 에 exerciseId 를 비정규화해둔 덕에 인덱스 한 방으로 후보를 뽑는다.
+ *
+ * equipment 를 주면 같은 기구로 했던 기록만 본다. 바벨 60kg 를 덤벨 벤치의 시작값으로
+ * 내밀면 곤란하다. 기구는 세트가 아니라 SessionExercise 에 있으므로 그쪽을 한 번 더 읽는다.
  */
 export async function lastSetOfExercise(
   exerciseId: string,
   excludeSessionExerciseId?: string,
+  equipment?: Equipment,
 ): Promise<SetLog | undefined> {
   const rows = await db.setLogs
     .where("[exerciseId+completedAt]")
@@ -211,9 +272,15 @@ export async function lastSetOfExercise(
     .filter(
       (s) => s.deletedAt === ALIVE && s.sessionExerciseId !== excludeSessionExerciseId,
     )
-    .limit(1)
     .toArray();
-  return rows[0];
+  if (equipment === undefined) return rows[0];
+
+  const linkIds = [...new Set(rows.map((s) => s.sessionExerciseId))];
+  const links = await db.sessionExercises.bulkGet(linkIds);
+  const matching = new Set(
+    links.filter((l) => l?.equipment === equipment).map((l) => l!.id),
+  );
+  return rows.find((s) => matching.has(s.sessionExerciseId));
 }
 
 /* ------------------------------ 조합 조회 ------------------------------ */

@@ -17,6 +17,8 @@ import {
   endSession,
   getActiveSession,
   lastSetOfExercise,
+  listCustomEquipments,
+  setSessionExerciseEquipment,
   listDatedSets,
   listExercises,
   listSessionsBetween,
@@ -25,6 +27,7 @@ import {
   updateSettings,
 } from "@/lib/db/repo";
 import { completeSet } from "@/lib/session/actions";
+import { normalizeEquipment } from "@/lib/db/schema";
 import { createBackup, restoreBackup, type Backup } from "@/lib/export/backup";
 import { sessionsToText } from "@/lib/export/toText";
 import { sessionVolume, sumVolume } from "@/lib/stats/volume";
@@ -124,6 +127,50 @@ async function main() {
     "같은 세션은 제외할 수 있다",
     (await lastSetOfExercise(bench.id, seId)) === undefined,
   );
+
+  console.log("\n[4-1] 기구는 세션 안의 종목에 기록된다");
+  check(
+    "기구를 안 고르면 종목의 지난 선택(프리셋 기본값)을 쓴다",
+    loaded.items[0].equipment === "barbell",
+    loaded.items[0].equipment,
+  );
+  check(
+    "같은 기구의 지난 기록만 집어온다",
+    (await lastSetOfExercise(bench.id, undefined, "barbell"))?.weightKg === 55 &&
+      (await lastSetOfExercise(bench.id, undefined, "dumbbell")) === undefined,
+  );
+  await setSessionExerciseEquipment(seId, "dumbbell");
+  check(
+    "기구를 바꾸면 기록과 종목의 기본값이 함께 바뀐다",
+    (await loadSession(sessionId))!.items[0].equipment === "dumbbell" &&
+      (await db.exercises.get(bench.id))?.equipment === "dumbbell",
+  );
+  check(
+    "바꾼 뒤엔 새 기구로 지난 기록이 잡힌다",
+    (await lastSetOfExercise(bench.id, undefined, "dumbbell"))?.weightKg === 55,
+  );
+
+  console.log("\n[4-2] 기구 직접 입력");
+  check(
+    "직접 적어도 프리셋 이름이면 프리셋으로 본다",
+    normalizeEquipment(" 바벨 ") === "barbell" && normalizeEquipment("없음") === "etc",
+  );
+  check(
+    "그 밖의 이름은 공백만 정리해 그대로 쓴다",
+    normalizeEquipment("  스미스   머신 ") === "스미스 머신" && normalizeEquipment("  ") === null,
+  );
+  await setSessionExerciseEquipment(seId, "케틀벨");
+  check("직접 적은 기구가 선택지 목록에 남는다", (await listCustomEquipments()).includes("케틀벨"));
+  check(
+    "직접 적은 기구로도 지난 기록을 찾는다",
+    (await lastSetOfExercise(bench.id, undefined, "케틀벨"))?.weightKg === 55,
+  );
+  check(
+    "내보내기엔 적은 이름 그대로 붙는다",
+    sessionsToText([(await loadSession(sessionId))!], "simple").includes("벤치프레스 (케틀벨)"),
+  );
+  await setSessionExerciseEquipment(seId, "barbell");
+  check("아무 데서도 안 쓰면 목록에서 빠진다", (await listCustomEquipments()).length === 0);
 
   console.log("\n[5] 세션 종료");
   advance(60); // 쉬던 중에 종료
@@ -267,7 +314,19 @@ async function main() {
     (await listExercises()).find((e) => e.name === "랫풀다운")?.equipment === "machine",
   );
 
-  console.log("\n[12] v1 → v3 DB 마이그레이션");
+  // v3 = 기구가 종목에만 있던 버전
+  const asV3: Backup = {
+    ...current,
+    version: 3,
+    sessionExercises: current.sessionExercises.map((l) => strip(l, "equipment")),
+  };
+  await restoreBackup(asV3, "replace");
+  check(
+    "v3 백업의 세션 종목에 그때 종목의 기구가 채워진다",
+    (await loadSession(sessionId))!.items[0].equipment === "barbell",
+  );
+
+  console.log("\n[12] v1 → v4 DB 마이그레이션");
   const legacyName = "workout-log-legacy";
   const legacy = new Dexie(legacyName);
   // v1 시절 스키마 그대로. 여기가 실제 폰에 깔려 있는 DB 의 모습이다.
@@ -288,6 +347,15 @@ async function main() {
     bodyPart: "back",
     isCustom: false,
     defaultRestSec: 150,
+    createdAt: 1,
+    updatedAt: 1,
+    deletedAt: 0,
+  });
+  await legacy.table("sessionExercises").add({
+    id: "se1",
+    sessionId: "ss1",
+    exerciseId: "x1",
+    order: 0,
     createdAt: 1,
     updatedAt: 1,
     deletedAt: 0,
@@ -333,6 +401,10 @@ async function main() {
   check(
     "v1 DB 가 v3 까지 연달아 올라가 기구도 채워진다",
     (await migrated.exercises.get("x1"))?.equipment === "etc",
+  );
+  check(
+    "v4 에서 세션 종목에 종목의 기구가 옮겨 적힌다",
+    (await migrated.sessionExercises.get("se1"))?.equipment === "etc",
   );
   migrated.close();
 

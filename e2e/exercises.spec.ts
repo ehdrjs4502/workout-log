@@ -12,7 +12,7 @@ import { test, expect } from "./fixtures";
 
 const NEW_NAME = "E2E 테스트 종목";
 
-/** 종목 추가 시트를 열어 이름만 채우고 저장한다 (부위·기구는 기본값) */
+/** 종목 추가 시트를 열어 이름만 채우고 저장한다 (부위는 기본값) */
 async function addExercise(page: import("@playwright/test").Page, name: string) {
   await page.getByRole("button", { name: "추가" }).click();
 
@@ -51,7 +51,7 @@ test("검색하면 목록이 좁혀지지만 헤더 개수는 그대로다", asy
   await page.getByRole("searchbox", { name: "종목 검색" }).fill("벤치프레스");
 
   await expect(
-    page.getByRole("button", { name: "벤치프레스 가슴 · 바벨 · 휴식 180초", exact: true }),
+    page.getByRole("button", { name: "벤치프레스 가슴 · 휴식 180초", exact: true }),
   ).toBeVisible();
   await expect(page.getByRole("button", { name: /^딥스 / })).toBeHidden();
 
@@ -76,7 +76,7 @@ test("부위 칩으로 목록을 거를 수 있다", async ({ page }) => {
   await page.getByRole("button", { name: "가슴", exact: true }).click();
 
   await expect(
-    page.getByRole("button", { name: "벤치프레스 가슴 · 바벨 · 휴식 180초", exact: true }),
+    page.getByRole("button", { name: "벤치프레스 가슴 · 휴식 180초", exact: true }),
   ).toBeVisible();
   await expect(page.getByRole("button", { name: /^스쿼트 / })).toBeHidden();
 });
@@ -104,10 +104,10 @@ test("새 종목을 추가하면 목록과 개수에 반영된다", async ({ pag
   await addExercise(page, NEW_NAME);
 
   await expect(page.getByText("45개")).toBeVisible();
-  // 부위·기구를 안 고르면 기본값은 '가슴 · 기타 · 휴식 90초'
+  // 부위를 안 고르면 기본값은 '가슴 · 휴식 90초'
   await expect(
     page.getByRole("button", {
-      name: `${NEW_NAME} 가슴 · 기타 · 휴식 90초`,
+      name: `${NEW_NAME} 가슴 · 휴식 90초`,
       exact: true,
     }),
   ).toBeVisible();
@@ -147,7 +147,7 @@ test("종목을 수정하면 목록의 이름이 바뀐다", async ({ page }) =>
   // 이름 뒤의 공백은 부제 앞에도, '수정'/'삭제' 앞에도 똑같이 있기 때문이다.
   await expect(
     page.getByRole("button", {
-      name: "딥스 변경됨 가슴 · 기타 · 휴식 120초",
+      name: "딥스 변경됨 가슴 · 휴식 120초",
       exact: true,
     }),
   ).toBeVisible();

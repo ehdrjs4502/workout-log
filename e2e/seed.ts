@@ -24,6 +24,8 @@ export type SeedSet = {
 export type SeedExercise = {
   /** 프리셋 종목 이름 그대로. 예: '벤치프레스' */
   name: string;
+  /** 'barbell' 등. 기본은 그 종목의 프리셋 기구 */
+  equipment?: string;
   sets: SeedSet[];
 };
 
@@ -92,9 +94,8 @@ export async function seedSessions(page: Page, specs: SeedSession[]) {
       throw new Error("프리셋 종목이 아직 시딩되지 않았습니다.");
     }
 
-    const byName = new Map<string, string>(
-      exercises.map((e: { name: string; id: string }) => [e.name, e.id]),
-    );
+    type Row = { name: string; id: string; equipment: string };
+    const byName = new Map<string, Row>(exercises.map((e: Row) => [e.name, e]));
 
     const id = () => crypto.randomUUID();
     const meta = (t: number) => ({ createdAt: t, updatedAt: t, deletedAt: ALIVE });
@@ -123,14 +124,17 @@ export async function seedSessions(page: Page, specs: SeedSession[]) {
       });
 
       spec.exercises.forEach((ex, order) => {
-        const exerciseId = byName.get(ex.name);
-        if (!exerciseId) throw new Error(`알 수 없는 종목: ${ex.name}`);
+        const exercise = byName.get(ex.name);
+        if (!exercise) throw new Error(`알 수 없는 종목: ${ex.name}`);
+        const exerciseId = exercise.id;
 
         const linkId = id();
         linkStore.put({
           id: linkId,
           sessionId,
           exerciseId,
+          // 기구는 세션 안의 종목에 남는다. 따로 안 주면 프리셋 기본값
+          equipment: ex.equipment ?? exercise.equipment,
           order,
           ...meta(startedAt),
         });

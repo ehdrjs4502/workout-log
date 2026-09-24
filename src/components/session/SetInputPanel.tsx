@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Check } from "lucide-react";
 import { Stepper } from "@/components/Stepper";
 import { Button } from "@/components/ui";
-import { EQUIPMENT_STEP, type Equipment } from "@/lib/db/schema";
+import { equipmentStep, NO_EQUIPMENT, type Equipment } from "@/lib/db/schema";
 
 export type SetValues = {
   /** 0 = 맨몸 (저장 시 null 로 변환된다) */
@@ -22,7 +22,7 @@ const RPE_OPTIONS = [6, 7, 8, 9, 10];
 export function SetInputPanel({
   defaults,
   usesBodyWeight = false,
-  equipment = "etc",
+  equipment = NO_EQUIPMENT,
   submitLabel = "세트 완료",
   hint,
   onSubmit,
@@ -72,7 +72,7 @@ export function SetInputPanel({
           label={usesBodyWeight ? "추가 무게" : "무게"}
           value={weightKg}
           onChange={setWeight}
-          step={EQUIPMENT_STEP[equipment]}
+          step={equipmentStep(equipment)}
           max={500}
           suffix="kg"
           zeroLabel="맨몸"

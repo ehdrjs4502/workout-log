@@ -90,7 +90,7 @@ const PRESET_EQUIPMENT = new Map<string, Equipment>(
 
 /**
  * 이름으로 기구를 되짚는다. equipment 가 없던 시절(v2)의 데이터를 백필할 때 쓴다.
- * 프리셋에 없는 사용자 종목은 이름에 박힌 단서로 추측하고, 그래도 모르면 '기타'.
+ * 프리셋에 없는 사용자 종목은 이름에 박힌 단서로 추측하고, 그래도 모르면 '없음'(NO_EQUIPMENT).
  * 어차피 종목 화면에서 언제든 고칠 수 있으니 억지로 맞히려 들지 않는다.
  */
 export function inferEquipment(name: string): Equipment {

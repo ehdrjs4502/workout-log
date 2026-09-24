@@ -6,16 +6,18 @@ import { Timer, Trash2 } from "lucide-react";
 import { Card } from "@/components/ui";
 import { Sheet } from "@/components/Sheet";
 import { SetInputPanel, type SetValues } from "./SetInputPanel";
+import { EquipmentChoice } from "./EquipmentChoice";
 import {
   deleteSet,
   lastSetOfExercise,
   removeSessionExercise,
+  setSessionExerciseEquipment,
   updateSet,
   type HydratedSessionExercise,
 } from "@/lib/db/repo";
 import { cancelTimerIfPointsTo, completeSet } from "@/lib/session/actions";
 import { unlockAudio } from "@/lib/timer/alert";
-import { BODY_PART_COLOR, type SetLog } from "@/lib/db/schema";
+import { BODY_PART_COLOR, equipmentLabel, type SetLog } from "@/lib/db/schema";
 import { formatClock, formatWeight } from "@/lib/format/date";
 import { bodyWeightOf, formatSetWeight, itemVolume } from "@/lib/stats/volume";
 
@@ -29,18 +31,19 @@ export function ExerciseLogCard({
   readOnly: boolean;
 }) {
   const [editing, setEditing] = useState<SetLog | null>(null);
+  const [choosingEquipment, setChoosingEquipment] = useState(false);
+  const equipment = item.equipment;
 
-  // 이 종목의 첫 세트일 때만 "지난 세션" 기록을 끌어온다
+  // 이 종목의 첫 세트일 때만 "지난 세션" 기록을 끌어온다. 같은 기구로 했던 것만.
   const previous = useLiveQuery(
     () =>
       item.sets.length === 0
-        ? lastSetOfExercise(item.exerciseId, item.id)
+        ? lastSetOfExercise(item.exerciseId, item.id, equipment)
         : Promise.resolve(undefined),
-    [item.sets.length, item.exerciseId, item.id],
+    [item.sets.length, item.exerciseId, item.id, equipment],
   );
 
   const usesBodyWeight = item.exercise?.usesBodyWeight ?? false;
-  const equipment = item.exercise?.equipment ?? "etc";
 
   const lastSet = item.sets.at(-1);
   const source = lastSet ?? previous;
@@ -97,6 +100,19 @@ export function ExerciseLogCard({
             {item.exercise?.name ?? "삭제된 종목"}
           </h2>
           <p className="text-xs text-muted tabular-nums">
+            {readOnly ? (
+              equipmentLabel(equipment)
+            ) : (
+              <button
+                type="button"
+                aria-label={`기구 바꾸기 (지금 ${equipmentLabel(equipment)})`}
+                onClick={() => setChoosingEquipment(true)}
+                className="underline decoration-dotted underline-offset-2"
+              >
+                {equipmentLabel(equipment)}
+              </button>
+            )}
+            {" · "}
             {item.sets.length}세트
             {volume > 0 ? ` · ${Math.round(volume).toLocaleString()}kg` : ""}
             {bodyWeight !== null ? ` · 체중 ${formatWeight(bodyWeight)}kg` : ""}
@@ -167,6 +183,21 @@ export function ExerciseLogCard({
           />
         </div>
       ) : null}
+
+      <Sheet
+        open={choosingEquipment}
+        onClose={() => setChoosingEquipment(false)}
+        title={`${item.exercise?.name ?? ""} 기구`}
+      >
+        <EquipmentChoice
+          current={equipment}
+          currentNote="지금"
+          onChoose={async (next) => {
+            await setSessionExerciseEquipment(item.id, next);
+            setChoosingEquipment(false);
+          }}
+        />
+      </Sheet>
 
       <Sheet
         open={!!editing}
